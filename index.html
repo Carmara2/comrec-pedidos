@@ -391,15 +391,19 @@ let matLineCount = 0;
 // ── UTILS FECHA ──
 function parseFecha(val) {
   if (!val) return '';
-  // Si ya es string con formato fecha, devolverlo tal cual
+  // String YYYY-MM-DD — devolver directamente sin pasar por Date
   if (typeof val === 'string' && val.match(/^\d{4}-\d{2}-\d{2}/)) return val.slice(0,10);
+  // String DD/MM/YYYY
   if (typeof val === 'string' && val.match(/^\d{2}\/\d{2}\/\d{4}/)) {
     const [d,m,y] = val.split('/'); return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
   }
-  // Si es número serial de Google Sheets (días desde 30/12/1899)
-  if (typeof val === 'number' || (typeof val === 'string' && !isNaN(val))) {
+  // Número serial de Google Sheets (días desde 30/12/1899) — usar UTC para evitar desfase
+  if (typeof val === 'number' || (typeof val === 'string' && !isNaN(val) && val !== '')) {
     const serial = Number(val);
-    const date = new Date((serial - 25569) * 86400 * 1000);
+    // Fórmula correcta: epoch Unix = (serial - 25569) * 86400 segundos
+    const totalDias = Math.floor(serial);
+    const date = new Date(Date.UTC(1899, 11, 30));
+    date.setUTCDate(date.getUTCDate() + totalDias);
     const y = date.getUTCFullYear();
     const m = String(date.getUTCMonth() + 1).padStart(2,'0');
     const d = String(date.getUTCDate()).padStart(2,'0');
@@ -1117,23 +1121,17 @@ function renderAnaliticaMaterial() {
   if (!mat) { wrap.innerHTML = ''; return; }
 
   const MESES_IDX = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const periodoLabel = periodo ? (() => { const [y,m]=periodo.split('-'); return `${MESES_IDX[parseInt(m)-1]} ${y}`; })() : '';
 
-  const periodoLabel = periodo ? (() => {
-    const [y, m] = periodo.split('-');
-    return `${MESES_IDX[parseInt(m)-1]} ${y}`;
-  })() : '';
-
-  // Pedidos del material filtrados por período del pedido
+  // Pedidos del material filtrados por período
   let pedsMat = pedidos.filter(p => p.material === mat);
-  if (periodo) {
-    pedsMat = pedsMat.filter(p => {
-      const ym = `${p.anyo}-${String(MESES_IDX.indexOf(p.mes)+1).padStart(2,'0')}`;
-      return ym === periodo;
-    });
-  }
+  if (periodo) pedsMat = pedsMat.filter(p => {
+    const ym = `${p.anyo}-${String(MESES_IDX.indexOf(p.mes)+1).padStart(2,'0')}`;
+    return ym === periodo;
+  });
 
   if (!pedsMat.length) {
-    wrap.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel ? ' en ' + periodoLabel : ''}</div>`;
+    wrap.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel?' en '+periodoLabel:''}</div>`;
     return;
   }
 
@@ -1144,13 +1142,12 @@ function renderAnaliticaMaterial() {
     porCliente[p.cliente].pedido    += p.cantPedida;
     porCliente[p.cliente].entregado += p.cantEntregada;
   });
-
   const clientes = Object.entries(porCliente).sort((a,b) => b[1].pedido - a[1].pedido);
   const totalPedido    = clientes.reduce((s,[,v]) => s + v.pedido, 0);
   const totalEntregado = clientes.reduce((s,[,v]) => s + v.entregado, 0);
   const totalPendiente = totalPedido - totalEntregado;
 
-  // Precio medio ponderado por entregas en el período
+  // Precio medio ponderado
   let ents = entregas.filter(e => e.material === mat);
   if (periodo) ents = ents.filter(e => {
     if (!e.fecha) return false;
@@ -1164,76 +1161,78 @@ function renderAnaliticaMaterial() {
   });
   const precioMedio = totalCantP > 0 ? totalImpP / totalCantP : (pedsMat[0]?.precio || 0);
 
-  // Preparar datos tartas — AMBAS usan totalPedido como base del 100%
-  // Tarta 1: sector por cliente = su entregado; el resto hasta totalPedido queda implícito
-  // Pero queremos mostrar SOLO entregados repartidos por cliente, con % sobre totalPedido
-  const datosEnt  = clientes.map(([cli, v], i) => ({ label: cli, valor: v.entregado,              color: COLORS[i % COLORS.length] })).filter(d => d.valor > 0);
-  const datosPend = clientes.map(([cli, v], i) => ({ label: cli, valor: Math.max(0, v.pedido - v.entregado), color: COLORS[i % COLORS.length] })).filter(d => d.valor > 0);
+  // Datos tartas
+  // Tarta 1: entregado por cliente + sector gris "pendiente total" — base = totalPedido
+  const datosEnt = [
+    ...clientes.map(([cli,v],i) => ({ label: cli, valor: v.entregado, color: COLORS[i%COLORS.length] })).filter(d => d.valor > 0),
+    ...(totalPendiente > 0 ? [{ label: 'Pendiente', valor: totalPendiente, color: '#d4cfc8' }] : [])
+  ];
+  // Tarta 2: pendiente por cliente — base = totalPendiente
+  const datosPend = clientes
+    .map(([cli,v],i) => ({ label: cli, valor: Math.max(0, v.pedido - v.entregado), color: COLORS[i%COLORS.length] }))
+    .filter(d => d.valor > 0);
 
   wrap.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
       <div class="stat-card"><div class="stat-label">Total pedido${periodoLabel?' ('+periodoLabel+')':''}</div><div class="stat-value">${totalPedido.toLocaleString('es-ES')} uds.</div></div>
       <div class="stat-card"><div class="stat-label">Total entregado</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES')} uds. · ${totalPedido?Math.round(totalEntregado/totalPedido*100):0}%</div></div>
       <div class="stat-card"><div class="stat-label">Total pendiente</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES')} uds. · ${totalPedido?Math.round(totalPendiente/totalPedido*100):0}%</div></div>
-      <div class="stat-card"><div class="stat-label">Precio medio ponderado</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</div></div>
+      <div class="stat-card"><div class="stat-label">Precio medio</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</div></div>
     </div>
-
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
 
       <!-- TARTA 1: ENTREGADO -->
       <div class="card" style="padding:20px">
         <div class="sec-label">Entregado por cliente</div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:14px">
-          Cada sector = % entregado de ese cliente sobre el <b>total pedido</b> (${totalPedido.toLocaleString('es-ES')} uds.)
+          Sectores = % de cada cliente sobre el total pedido (${totalPedido.toLocaleString('es-ES')} uds.) · Gris = pendiente total
         </div>
-        ${datosEnt.length ? `
         <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
           <canvas id="pie-mat-ent" width="200" height="200" style="flex-shrink:0"></canvas>
           <div style="flex:1;min-width:140px">
             ${clientes.map(([cli,v],i) => `
-              <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px">
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
                 <div style="width:11px;height:11px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
                 <div style="flex:1;font-size:12px">${cli}</div>
                 <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent)">${v.entregado.toLocaleString('es-ES')}</div>
-                <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:32px;text-align:right">${totalPedido?Math.round(v.entregado/totalPedido*100):0}%</div>
+                <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPedido?Math.round(v.entregado/totalPedido*100):0}%</div>
               </div>`).join('')}
-            <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;font-family:var(--mono);font-size:11px;color:var(--text2)">
-              Total entregado: <b>${totalEntregado.toLocaleString('es-ES')}</b> de ${totalPedido.toLocaleString('es-ES')} (${totalPedido?Math.round(totalEntregado/totalPedido*100):0}%)
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
+              <div style="width:11px;height:11px;border-radius:50%;background:#d4cfc8;flex-shrink:0"></div>
+              <div style="flex:1;font-size:12px;color:var(--text3)">Pendiente total</div>
+              <div style="font-family:var(--mono);font-size:11px;color:var(--text3)">${totalPendiente.toLocaleString('es-ES')}</div>
+              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPedido?Math.round(totalPendiente/totalPedido*100):0}%</div>
             </div>
           </div>
-        </div>` : `<div class="empty-state" style="padding:1.5rem">Sin entregas registradas aún</div>`}
+        </div>
       </div>
 
       <!-- TARTA 2: PENDIENTE -->
       <div class="card" style="padding:20px">
         <div class="sec-label">Pendiente por cliente</div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:14px">
-          Cada sector = % pendiente de ese cliente sobre el <b>total pedido</b> (${totalPedido.toLocaleString('es-ES')} uds.)
+          Sectores = % de cada cliente sobre el total pendiente (${totalPendiente.toLocaleString('es-ES')} uds.)
         </div>
         ${datosPend.length ? `
         <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
           <canvas id="pie-mat-pend" width="200" height="200" style="flex-shrink:0"></canvas>
           <div style="flex:1;min-width:140px">
-            ${clientes.filter(([,v]) => v.pedido - v.entregado > 0).map(([cli,v],i) => `
-              <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px">
+            ${clientes.filter(([,v]) => v.pedido-v.entregado > 0).map(([cli,v],i) => `
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
                 <div style="width:11px;height:11px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
                 <div style="flex:1;font-size:12px">${cli}</div>
                 <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--warn)">${(v.pedido-v.entregado).toLocaleString('es-ES')}</div>
-                <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:32px;text-align:right">${totalPedido?Math.round((v.pedido-v.entregado)/totalPedido*100):0}%</div>
+                <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPendiente?Math.round((v.pedido-v.entregado)/totalPendiente*100):0}%</div>
               </div>`).join('')}
-            <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;font-family:var(--mono);font-size:11px;color:var(--text2)">
-              Total pendiente: <b>${totalPendiente.toLocaleString('es-ES')}</b> de ${totalPedido.toLocaleString('es-ES')} (${totalPedido?Math.round(totalPendiente/totalPedido*100):0}%)
-            </div>
           </div>
         </div>` : `<div class="empty-state" style="padding:1.5rem">✅ Todo entregado</div>`}
       </div>
 
     </div>`;
 
-  // Dibujar tartas con % sobre totalPedido
   setTimeout(() => {
     if (datosEnt.length)  drawPieChart('pie-mat-ent',  datosEnt,  totalPedido);
-    if (datosPend.length) drawPieChart('pie-mat-pend', datosPend, totalPedido);
+    if (datosPend.length) drawPieChart('pie-mat-pend', datosPend, totalPendiente);
   }, 50);
 }
 
