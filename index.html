@@ -178,6 +178,7 @@ tbody tr:hover td { background: var(--bg); }
     <button class="nav-btn" onclick="goTab('entregas')"><span>🚚</span> Reg. Entrega</button>
     <div class="nav-label">Consulta</div>
     <button class="nav-btn" onclick="goTab('historial')"><span>📦</span> Historial <span class="nav-badge" id="hbadge">0</span></button>
+    <button class="nav-btn" onclick="goTab('analitica')"><span>📊</span> Analítica</button>
     <div class="nav-label">Config.</div>
     <button class="nav-btn" onclick="goTab('listas')"><span>⚙️</span> Listas</button>
   </nav>
@@ -280,6 +281,64 @@ tbody tr:hover td { background: var(--bg); }
           </div>
         </div>
         <div id="tabla-historial"></div>
+      </div>
+    </div>
+
+    <!-- ANALÍTICA -->
+    <div class="panel" id="panel-analitica">
+      <div class="page-header">
+        <div class="page-title">Analítica</div>
+        <div class="page-sub">Análisis de entregas por material y por cliente</div>
+      </div>
+
+      <!-- SELECTOR DE VISTA -->
+      <div style="display:flex;gap:8px;margin-bottom:20px">
+        <button class="btn btn-primary" id="btn-vista-material" onclick="setVistaAnalitica('material')">📦 Por material</button>
+        <button class="btn btn-secondary" id="btn-vista-cliente" onclick="setVistaAnalitica('cliente')">🏢 Por cliente</button>
+      </div>
+
+      <!-- VISTA POR MATERIAL -->
+      <div id="vista-material">
+        <div class="card">
+          <div class="sec-label">Selecciona un material</div>
+          <div class="g2">
+            <div class="field">
+              <label>Material</label>
+              <select id="a-material" onchange="renderAnaliticaMaterial()">
+                <option value="">— Selecciona material —</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Período</label>
+              <select id="a-material-periodo" onchange="renderAnaliticaMaterial()">
+                <option value="">Todos los períodos</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div id="resultado-material"></div>
+      </div>
+
+      <!-- VISTA POR CLIENTE -->
+      <div id="vista-cliente" style="display:none">
+        <div class="card">
+          <div class="sec-label">Selecciona un cliente</div>
+          <div class="g2">
+            <div class="field">
+              <label>Cliente</label>
+              <select id="a-cliente" onchange="renderAnaliticaCliente()">
+                <option value="">— Selecciona cliente —</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Período</label>
+              <select id="a-cliente-periodo" onchange="renderAnaliticaCliente()">
+                <option value="">Todos los períodos</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div id="resultado-cliente"></div>
       </div>
     </div>
 
@@ -454,11 +513,12 @@ function showLoading(show) {
 function goTab(name) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  const names = ['pedidos', 'entregas', 'historial', 'listas'];
+  const names = ['pedidos', 'entregas', 'historial', 'analitica', 'listas'];
   document.querySelectorAll('.nav-btn')[names.indexOf(name)].classList.add('active');
   document.getElementById('panel-' + name).classList.add('active');
   if (name === 'entregas') { populateEntregaAnyo(); renderEntregasView(); }
   if (name === 'historial') renderHistorial();
+  if (name === 'analitica') initAnalitica();
   if (name === 'listas') renderTags();
 }
 
@@ -613,17 +673,13 @@ function renderEntregasView() {
 
   const totalPed = peds.reduce((s, p) => s + p.cantPedida, 0);
   const totalEnt = peds.reduce((s, p) => s + p.cantEntregada, 0);
-
-  const precioUd = peds.length > 0 ? peds[0].precio : 0;
-  const importePedido = totalPed * precioUd;
-  const importeEntregado = totalEnt * precioUd;
   const pctTotal = totalPed ? Math.round(totalEnt / totalPed * 100) : 0;
+
   let html = `<div class="pedido-block">
     <div class="pedido-block-head">
-      <span class="pedido-num">${peds.map(p=>p.num).join(', ')}</span>
-      <span class="pedido-meta">${peds[0].cliente} · ${peds[0].mes} ${peds[0].anyo} · ${material}</span>
+      <span class="pedido-meta" style="font-weight:600">${cliente} · ${material}</span>
       <div class="pedido-stats">
-        <span class="pedido-stat">Pedido: <span>${totalPed}</span></span>
+        <span class="pedido-stat">Total pedido: <span>${totalPed}</span></span>
         <span class="pedido-stat green">Entregado: <span>${totalEnt}</span></span>
         <span class="pedido-stat amber">Pendiente: <span>${totalPed - totalEnt}</span></span>
         <div class="prog-wrap" style="min-width:140px">
@@ -631,56 +687,62 @@ function renderEntregasView() {
           <span class="prog-pct">${pctTotal}%</span>
         </div>
       </div>
-    </div>
-    <div style="padding:14px 16px;background:var(--surface2);border-bottom:1px solid var(--border)">
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
-        <div class="stat-card"><div class="stat-label">Total pedido (${material})</div><div class="stat-value">${totalPed}</div></div>
-        <div class="stat-card"><div class="stat-label">Precio pedido</div><div class="stat-value">${precioUd.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</div><div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:4px">Total: ${importePedido.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
-        <div class="stat-card"><div class="stat-label">Total entregado</div><div class="stat-value green">${totalEnt}</div><div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:4px">${importeEntregado.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
-        <div class="stat-card"><div class="stat-label">Total pendiente</div><div class="stat-value amber">${totalPed - totalEnt}</div></div>
-      </div>
     </div>`;
 
   peds.forEach(p => {
     const pend = p.cantPedida - p.cantEntregada;
-    const pct = Math.round(p.cantEntregada / p.cantPedida * 100);
+    const pct = p.cantPedida ? Math.round(p.cantEntregada / p.cantPedida * 100) : 0;
     const entsLinea = entregas.filter(e => e.num === p.num && e.material === p.material);
     const accId = 'acc-' + p.rowIndex;
+    const importePedido = p.cantPedida * p.precio;
+    const importeEntregado = p.cantEntregada * p.precio;
 
-    html += `<div style="border-top:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--bg);border-bottom:1px solid var(--border)">
+    html += `<div style="border-top:2px solid var(--border)">
+      <div style="padding:10px 16px;background:var(--surface2);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <span class="pedido-num">${p.num}</span>
-        <span class="pedido-stat">Pedido: <span>${p.cantPedida}</span></span>
-        <span class="pedido-stat green">Entregado: <span>${p.cantEntregada}</span></span>
-        <span class="pedido-stat amber">Pendiente: <span>${pend}</span></span>
-        <div class="prog-wrap" style="min-width:140px;margin-left:auto">
-          <div class="prog-bar"><div class="prog-fill ${pct>=100?'prog-green':'prog-amber'}" style="width:${pct}%"></div></div>
-          <span class="prog-pct">${pct}%</span>
+        <span style="font-family:var(--mono);font-size:13px;background:var(--accent-light);color:var(--accent-text);border:1px solid var(--accent);border-radius:var(--radius);padding:3px 10px;font-weight:600">${p.precio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</span>
+        <div style="display:flex;gap:16px;margin-left:auto;flex-wrap:wrap">
+          <span class="pedido-stat">Pedido: <span>${p.cantPedida}</span></span>
+          <span class="pedido-stat green">Entregado: <span>${p.cantEntregada}</span></span>
+          <span class="pedido-stat amber">Pendiente: <span>${pend}</span></span>
+          <div class="prog-wrap" style="min-width:120px">
+            <div class="prog-bar"><div class="prog-fill ${pct>=100?'prog-green':'prog-amber'}" style="width:${pct}%"></div></div>
+            <span class="prog-pct">${pct}%</span>
+          </div>
         </div>
       </div>
-
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--border)">
+        <div class="stat-card" style="padding:10px 12px"><div class="stat-label">Cant. pedida</div><div class="stat-value" style="font-size:18px">${p.cantPedida}</div></div>
+        <div class="stat-card" style="padding:10px 12px"><div class="stat-label">Importe pedido</div><div class="stat-value" style="font-size:18px">${importePedido.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div class="stat-card" style="padding:10px 12px"><div class="stat-label">Entregado</div><div class="stat-value green" style="font-size:18px">${p.cantEntregada}</div><div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:2px">${importeEntregado.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div class="stat-card" style="padding:10px 12px"><div class="stat-label">Pendiente</div><div class="stat-value amber" style="font-size:18px">${pend}</div></div>
+      </div>
       <button class="accordion-btn" onclick="toggleAcc('${accId}')">
         📦 Entregas anteriores (${entsLinea.length})
         <span class="accordion-arrow" id="arrow-${accId}">▼</span>
       </button>
       <div class="accordion-body" id="${accId}">
-        ${entsLinea.length ? `<table><thead><tr><th>Fecha</th><th>Nº Pedido</th><th style="text-align:right">Cantidad</th><th>Observaciones</th></tr></thead>
-        <tbody>${entsLinea.map(e => `<tr>
+        ${entsLinea.length ? `<table><thead><tr>
+          <th>Fecha</th><th style="text-align:right">Cantidad</th><th>Observaciones</th><th style="text-align:center">Acciones</th>
+        </tr></thead><tbody>${entsLinea.map(e => `<tr>
           <td style="font-family:var(--mono)">${e.fecha}</td>
-          <td style="font-family:var(--mono);font-weight:500">${e.num}</td>
           <td style="text-align:right;font-family:var(--mono);font-weight:500">${e.cantidad}</td>
           <td style="color:var(--text2)">${e.obs || '—'}</td>
+          <td style="text-align:center;white-space:nowrap">
+            <button class="btn-sm" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="editarEntrega(${e.rowIndex},${p.rowIndex},'${p.num}','${p.material}',${e.cantidad})">✏️ Editar</button>
+            <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="eliminarEntrega(${e.rowIndex},${p.rowIndex},${e.cantidad})">🗑 Eliminar</button>
+          </td>
         </tr>`).join('')}</tbody></table>` : `<div style="padding:12px 16px;color:var(--text3);font-size:13px">Sin entregas registradas aún</div>`}
-      </div>`;
-
-    html += `<div class="entrega-registro">
-      <div class="field"><label>Fecha de entrega</label><input type="date" id="fecha-${p.rowIndex}" value="${today()}"></div>
-      <div class="field"><label>Cantidad (máx. ${pend})</label><input type="number" id="cant-${p.rowIndex}" min="1" max="${pend}" step="1" placeholder="0"></div>
-      <div class="field"><label>Observaciones</label><input type="text" id="obs-${p.rowIndex}" placeholder="Nota opcional..."></div>
-      <div class="field"><label style="opacity:0">_</label>
-        <button class="btn btn-success" onclick="registrarEntrega(${p.rowIndex},'${p.num}','${p.mes}',${p.anyo},'${p.cliente}','${p.material}',${pend})">✓ Registrar</button>
       </div>
-    </div></div>`;
+      <div class="entrega-registro">
+        <div class="field"><label>Fecha de entrega</label><input type="date" id="fecha-${p.rowIndex}" value="${today()}"></div>
+        <div class="field"><label>Cantidad (máx. ${pend})</label><input type="number" id="cant-${p.rowIndex}" min="1" max="${pend}" step="1" placeholder="0"></div>
+        <div class="field"><label>Observaciones</label><input type="text" id="obs-${p.rowIndex}" placeholder="Nota opcional..."></div>
+        <div class="field"><label style="opacity:0">_</label>
+          <button class="btn btn-success" onclick="registrarEntrega(${p.rowIndex},'${p.num}','${p.mes}',${p.anyo},'${p.cliente}','${p.material}',${pend})">✓ Registrar</button>
+        </div>
+      </div>
+    </div>`;
   });
 
   html += '</div>';
@@ -693,39 +755,70 @@ async function registrarEntrega(rowIndex, num, mes, anyo, cliente, material, pen
   const cantidad = parseInt(document.getElementById('cant-' + rowIndex).value) || 0;
   const obs = document.getElementById('obs-' + rowIndex).value.trim();
   const msgOk = document.getElementById('msg-e-ok'), msgErr = document.getElementById('msg-e-err');
-
   if (!fecha || !cantidad) { showMsg(msgErr, 'Indica fecha y cantidad.'); return; }
   if (cantidad > pend) { showMsg(msgErr, `La cantidad (${cantidad}) supera el pendiente (${pend}).`); return; }
-
   showLoading(true);
   try {
-    // Buscar la fila del pedido para actualizar Cant_Entregada
     const pedido = pedidos.find(p => p.rowIndex === rowIndex);
     const nuevaEntregada = pedido.cantEntregada + cantidad;
-
-    // 1. Añadir fila en hoja Entregas
     await apiCall({ action: 'appendRow', sheet: 'Entregas', row: JSON.stringify([fecha, num, mes, anyo, cliente, material, cantidad, obs]) });
-
-    // 2. Actualizar Cant_Entregada en hoja Pedidos (col 8)
     await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: rowIndex, col: 8, value: nuevaEntregada });
-
     showMsg(msgOk, `✓ Entrega registrada: ${cantidad} uds. de ${material} en ${num}.`);
     await cargarDatos();
-    // Restaurar filtros
     document.getElementById('e-mes').value = mes;
     document.getElementById('e-anyo').value = anyo;
     filtrarClientes();
     setTimeout(() => {
       document.getElementById('e-cliente').value = cliente;
       filtrarMateriales();
-      setTimeout(() => {
-        document.getElementById('e-material').value = material;
-        renderEntregasView();
-      }, 100);
+      setTimeout(() => { document.getElementById('e-material').value = material; renderEntregasView(); }, 100);
     }, 100);
-  } catch(e) {
-    showMsg(msgErr, 'Error al guardar la entrega. Comprueba la conexión.');
-  }
+  } catch(e) { showMsg(msgErr, 'Error al guardar la entrega.'); }
+  showLoading(false);
+}
+
+// ── EDITAR ENTREGA ──
+async function editarEntrega(entRowIndex, pedRowIndex, num, material, cantAnterior) {
+  const entrega = entregas.find(e => e.rowIndex === entRowIndex);
+  if (!entrega) return;
+  const nuevaFecha = prompt('Fecha de entrega (AAAA-MM-DD):', entrega.fecha);
+  if (nuevaFecha === null) return;
+  const nuevaCant = parseInt(prompt('Cantidad:', entrega.cantidad));
+  if (!nuevaCant || isNaN(nuevaCant)) { alert('Cantidad no válida.'); return; }
+  const nuevaObs = prompt('Observaciones:', entrega.obs || '');
+  if (nuevaObs === null) return;
+  const diff = nuevaCant - cantAnterior;
+  const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
+  showLoading(true);
+  try {
+    await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 1, value: nuevaFecha });
+    await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 7, value: nuevaCant });
+    await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 8, value: nuevaObs });
+    if (pedido && diff !== 0) {
+      await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: pedido.cantEntregada + diff });
+    }
+    const msgOk = document.getElementById('msg-e-ok');
+    showMsg(msgOk, '✓ Entrega actualizada correctamente.');
+    await cargarDatos();
+    renderEntregasView();
+  } catch(e) { alert('Error al editar la entrega.'); }
+  showLoading(false);
+}
+
+// ── ELIMINAR ENTREGA ──
+async function eliminarEntrega(entRowIndex, pedRowIndex, cantAnterior) {
+  if (!confirm(`¿Eliminar esta entrega de ${cantAnterior} uds.? No se puede deshacer.`)) return;
+  const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
+  showLoading(true);
+  try {
+    await apiCall({ action: 'deleteRow', sheet: 'Entregas', row: entRowIndex });
+    if (pedido) {
+      await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: Math.max(0, pedido.cantEntregada - cantAnterior) });
+    }
+    showMsg(document.getElementById('msg-e-ok'), '✓ Entrega eliminada.');
+    await cargarDatos();
+    renderEntregasView();
+  } catch(e) { alert('Error al eliminar la entrega.'); }
   showLoading(false);
 }
 
@@ -742,15 +835,63 @@ function renderHistorial() {
   if (!entregas.length) { wrap.innerHTML = '<div class="empty-state"><span class="empty-state-icon">📭</span>Sin entregas registradas aún</div>'; return; }
   wrap.innerHTML = `<table><thead><tr>
     <th>Fecha</th><th>Nº Pedido</th><th>Mes / Año</th><th>Cliente</th><th>Material</th>
-    <th style="text-align:right">Cantidad</th><th>Observaciones</th>
-  </tr></thead><tbody>${[...entregas].reverse().map(e => `<tr>
-    <td style="font-family:var(--mono)">${e.fecha}</td>
-    <td style="font-family:var(--mono);font-weight:500">${e.num}</td>
-    <td>${e.mes} ${e.anyo}</td><td>${e.cliente}</td><td>${e.material}</td>
-    <td style="text-align:right;font-family:var(--mono);font-weight:500">${e.cantidad}</td>
-    <td style="color:var(--text2)">${e.obs || '—'}</td>
-  </tr>`).join('')}</tbody></table>`;
+    <th style="text-align:right">Cantidad</th><th>Observaciones</th><th style="text-align:center">Acciones</th>
+  </tr></thead><tbody>${[...entregas].reverse().map(e => {
+    const pedido = pedidos.find(p => p.num === e.num && p.material === e.material);
+    return `<tr>
+      <td style="font-family:var(--mono)">${e.fecha}</td>
+      <td style="font-family:var(--mono);font-weight:500">${e.num}</td>
+      <td>${e.mes} ${e.anyo}</td><td>${e.cliente}</td><td>${e.material}</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:500">${e.cantidad}</td>
+      <td style="color:var(--text2)">${e.obs || '—'}</td>
+      <td style="text-align:center;white-space:nowrap">
+        <button class="btn-sm" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="editarEntregaHistorial(${e.rowIndex},${pedido ? pedido.rowIndex : 0},'${e.num}','${e.material}',${e.cantidad})">✏️</button>
+        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="eliminarEntregaHistorial(${e.rowIndex},${pedido ? pedido.rowIndex : 0},${e.cantidad})">🗑</button>
+      </td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
 }
+
+async function editarEntregaHistorial(entRowIndex, pedRowIndex, num, material, cantAnterior) {
+  const entrega = entregas.find(e => e.rowIndex === entRowIndex);
+  if (!entrega) return;
+  const nuevaFecha = prompt('Fecha de entrega (AAAA-MM-DD):', entrega.fecha);
+  if (nuevaFecha === null) return;
+  const nuevaCant = parseInt(prompt('Cantidad:', entrega.cantidad));
+  if (!nuevaCant || isNaN(nuevaCant)) { alert('Cantidad no válida.'); return; }
+  const nuevaObs = prompt('Observaciones:', entrega.obs || '');
+  if (nuevaObs === null) return;
+  const diff = nuevaCant - cantAnterior;
+  const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
+  showLoading(true);
+  try {
+    await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 1, value: nuevaFecha });
+    await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 7, value: nuevaCant });
+    await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 8, value: nuevaObs });
+    if (pedido && diff !== 0) {
+      await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: pedido.cantEntregada + diff });
+    }
+    await cargarDatos();
+    renderHistorial();
+  } catch(e) { alert('Error al editar.'); }
+  showLoading(false);
+}
+
+async function eliminarEntregaHistorial(entRowIndex, pedRowIndex, cantAnterior) {
+  if (!confirm(`¿Eliminar esta entrega de ${cantAnterior} uds.? No se puede deshacer.`)) return;
+  const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
+  showLoading(true);
+  try {
+    await apiCall({ action: 'deleteRow', sheet: 'Entregas', row: entRowIndex });
+    if (pedido) {
+      await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: Math.max(0, pedido.cantEntregada - cantAnterior) });
+    }
+    await cargarDatos();
+    renderHistorial();
+  } catch(e) { alert('Error al eliminar.'); }
+  showLoading(false);
+}
+
 
 // ── LISTAS ──
 function renderTags() {
@@ -826,6 +967,229 @@ function exportCSV(tipo) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = name; a.click();
   URL.revokeObjectURL(url);
+}
+
+// ── ANALÍTICA ──
+let vistaAnalitica = 'material';
+
+function setVistaAnalitica(vista) {
+  vistaAnalitica = vista;
+  document.getElementById('vista-material').style.display = vista === 'material' ? 'block' : 'none';
+  document.getElementById('vista-cliente').style.display = vista === 'cliente' ? 'block' : 'none';
+  document.getElementById('btn-vista-material').className = 'btn ' + (vista === 'material' ? 'btn-primary' : 'btn-secondary');
+  document.getElementById('btn-vista-cliente').className = 'btn ' + (vista === 'cliente' ? 'btn-primary' : 'btn-secondary');
+}
+
+function initAnalitica() {
+  // Poblar selectores de material y cliente
+  const selMat = document.getElementById('a-material');
+  const selCli = document.getElementById('a-cliente');
+  const prevMat = selMat.value, prevCli = selCli.value;
+
+  selMat.innerHTML = '<option value="">— Selecciona material —</option>' +
+    listas.materiales.map(m => `<option value="${m}">${m}</option>`).join('');
+  selCli.innerHTML = '<option value="">— Selecciona cliente —</option>' +
+    listas.clientes.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  // Poblar períodos únicos (Mes Año) de entregas
+  const periodos = [...new Set(entregas.map(e => `${e.mes} ${e.anyo}`))].sort();
+  ['a-material-periodo', 'a-cliente-periodo'].forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = '<option value="">Todos los períodos</option>' +
+      periodos.map(p => `<option value="${p}">${p}</option>`).join('');
+  });
+
+  if (prevMat) { selMat.value = prevMat; renderAnaliticaMaterial(); }
+  if (prevCli) { selCli.value = prevCli; renderAnaliticaCliente(); }
+}
+
+// Colores para el gráfico de tartas
+const COLORS = ['#2a5c45','#e07b39','#3b82f6','#a855f7','#ec4899','#14b8a6','#f59e0b','#ef4444','#6366f1','#84cc16','#06b6d4','#f97316'];
+
+function drawPieChart(canvasId, datos) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2, r = Math.min(cx, cy) - 10;
+  ctx.clearRect(0, 0, W, H);
+
+  const total = datos.reduce((s, d) => s + d.valor, 0);
+  if (!total) return;
+
+  let angle = -Math.PI / 2;
+  datos.forEach((d, i) => {
+    const slice = (d.valor / total) * 2 * Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, angle, angle + slice);
+    ctx.closePath();
+    ctx.fillStyle = COLORS[i % COLORS.length];
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Etiqueta dentro si el slice es suficientemente grande
+    if (slice > 0.3) {
+      const mid = angle + slice / 2;
+      const lx = cx + (r * 0.65) * Math.cos(mid);
+      const ly = cy + (r * 0.65) * Math.sin(mid);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(Math.round(d.valor / total * 100) + '%', lx, ly);
+    }
+    angle += slice;
+  });
+}
+
+function renderAnaliticaMaterial() {
+  const mat = document.getElementById('a-material').value;
+  const periodo = document.getElementById('a-material-periodo').value;
+  const wrap = document.getElementById('resultado-material');
+  if (!mat) { wrap.innerHTML = ''; return; }
+
+  // Filtrar entregas por material y período
+  let ents = entregas.filter(e => e.material === mat);
+  if (periodo) ents = ents.filter(e => `${e.mes} ${e.anyo}` === periodo);
+
+  if (!ents.length) {
+    wrap.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay entregas registradas para ${mat}${periodo ? ' en ' + periodo : ''}</div>`;
+    return;
+  }
+
+  // Agrupar por cliente
+  const porCliente = {};
+  ents.forEach(e => {
+    if (!porCliente[e.cliente]) porCliente[e.cliente] = 0;
+    porCliente[e.cliente] += e.cantidad;
+  });
+  const datos = Object.entries(porCliente).map(([k, v]) => ({ label: k, valor: v })).sort((a, b) => b.valor - a.valor);
+  const totalEnt = datos.reduce((s, d) => s + d.valor, 0);
+
+  // Precio medio ponderado por cantidad entregada en el período
+  // Para cada entrega, buscamos el precio del pedido correspondiente
+  let totalCantPonderada = 0, totalImportePonderado = 0;
+  ents.forEach(e => {
+    const ped = pedidos.find(p => p.num === e.num && p.material === e.material);
+    if (ped && ped.precio) {
+      totalCantPonderada += e.cantidad;
+      totalImportePonderado += e.cantidad * ped.precio;
+    }
+  });
+  const precioMedio = totalCantPonderada > 0 ? totalImportePonderado / totalCantPonderada : 0;
+
+  wrap.innerHTML = `
+    <div class="g2" style="margin-bottom:16px">
+      <div class="stat-card"><div class="stat-label">Total entregado (${mat})</div><div class="stat-value">${totalEnt.toLocaleString('es-ES')} uds.</div></div>
+      <div class="stat-card"><div class="stat-label">Precio medio</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</div></div>
+    </div>
+    <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center">
+      <div>
+        <canvas id="pie-material" width="280" height="280"></canvas>
+      </div>
+      <div>
+        <div class="sec-label" style="margin-bottom:12px">Distribución por cliente</div>
+        ${datos.map((d, i) => `
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <div style="width:12px;height:12px;border-radius:50%;background:${COLORS[i % COLORS.length]};flex-shrink:0"></div>
+            <div style="flex:1;font-size:13px">${d.label}</div>
+            <div style="font-family:var(--mono);font-size:12px;font-weight:500">${d.valor.toLocaleString('es-ES')} uds.</div>
+            <div style="font-family:var(--mono);font-size:12px;color:var(--text3);min-width:40px;text-align:right">${Math.round(d.valor/totalEnt*100)}%</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+
+  setTimeout(() => drawPieChart('pie-material', datos), 50);
+}
+
+function renderAnaliticaCliente() {
+  const cli = document.getElementById('a-cliente').value;
+  const periodo = document.getElementById('a-cliente-periodo').value;
+  const wrap = document.getElementById('resultado-cliente');
+  if (!cli) { wrap.innerHTML = ''; return; }
+
+  // Filtrar entregas por cliente y período
+  let ents = entregas.filter(e => e.cliente === cli);
+  if (periodo) ents = ents.filter(e => `${e.mes} ${e.anyo}` === periodo);
+
+  // Pedidos activos del cliente
+  const pedsCliente = pedidos.filter(p => p.cliente === cli);
+
+  if (!ents.length && !pedsCliente.length) {
+    wrap.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay datos para ${cli}</div>`;
+    return;
+  }
+
+  // Agrupar por material
+  const porMaterial = {};
+  pedsCliente.forEach(p => {
+    if (!porMaterial[p.material]) porMaterial[p.material] = { pedido: 0, entregado: 0, precio: p.precio };
+    porMaterial[p.material].pedido += p.cantPedida;
+    porMaterial[p.material].entregado += p.cantEntregada;
+  });
+
+  // Añadir datos de entregas históricas
+  ents.forEach(e => {
+    if (!porMaterial[e.material]) porMaterial[e.material] = { pedido: 0, entregado: 0, precio: 0 };
+  });
+
+  const mats = Object.entries(porMaterial).sort((a, b) => b[1].entregado - a[1].entregado);
+  const totalEntregado = mats.reduce((s, [, v]) => s + v.entregado, 0);
+  const totalPedido = mats.reduce((s, [, v]) => s + v.pedido, 0);
+  const importeTotal = mats.reduce((s, [, v]) => s + v.entregado * v.precio, 0);
+
+  const datosPie = mats.map(([k, v]) => ({ label: k, valor: v.entregado })).filter(d => d.valor > 0);
+
+  wrap.innerHTML = `
+    <div class="g-stats4" style="margin-bottom:16px">
+      <div class="stat-card"><div class="stat-label">Materiales distintos</div><div class="stat-value">${mats.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Total pedido</div><div class="stat-value">${totalPedido.toLocaleString('es-ES')}</div></div>
+      <div class="stat-card"><div class="stat-label">Total entregado</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES')}</div></div>
+      <div class="stat-card"><div class="stat-label">Importe entregado</div><div class="stat-value">${importeTotal.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+    </div>
+    ${datosPie.length > 1 ? `
+    <div class="card" style="display:grid;grid-template-columns:280px 1fr;gap:24px;align-items:center;margin-bottom:16px">
+      <canvas id="pie-cliente" width="280" height="280"></canvas>
+      <div>
+        <div class="sec-label" style="margin-bottom:12px">Distribución por material</div>
+        ${datosPie.map((d, i) => `
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <div style="width:12px;height:12px;border-radius:50%;background:${COLORS[i % COLORS.length]};flex-shrink:0"></div>
+            <div style="flex:1;font-size:13px">${d.label}</div>
+            <div style="font-family:var(--mono);font-size:12px;font-weight:500">${d.valor.toLocaleString('es-ES')} uds.</div>
+            <div style="font-family:var(--mono);font-size:12px;color:var(--text3);min-width:40px;text-align:right">${Math.round(d.valor/totalEntregado*100)}%</div>
+          </div>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="card card-noPad">
+      <div class="card-header"><span class="sec-label" style="margin:0">Detalle por material</span></div>
+      <table><thead><tr>
+        <th>Material</th><th style="text-align:right">Precio</th>
+        <th style="text-align:right">Pedido</th><th style="text-align:right">Entregado</th>
+        <th style="text-align:right">Pendiente</th><th>Progreso</th>
+        <th style="text-align:right">Importe entregado</th>
+      </tr></thead><tbody>
+      ${mats.map(([mat, v]) => {
+        const pend = v.pedido - v.entregado;
+        const pct = v.pedido ? Math.round(v.entregado / v.pedido * 100) : 100;
+        const cls = pct >= 100 ? 'prog-green' : 'prog-amber';
+        return `<tr>
+          <td style="font-weight:500">${mat}</td>
+          <td style="text-align:right;font-family:var(--mono)">${v.precio ? v.precio.toLocaleString('es-ES',{minimumFractionDigits:2})+' €' : '—'}</td>
+          <td style="text-align:right;font-family:var(--mono)">${v.pedido.toLocaleString('es-ES')}</td>
+          <td style="text-align:right;font-family:var(--mono);color:var(--accent);font-weight:500">${v.entregado.toLocaleString('es-ES')}</td>
+          <td style="text-align:right;font-family:var(--mono);color:${pend>0?'var(--warn)':'var(--accent)'};font-weight:500">${pend.toLocaleString('es-ES')}</td>
+          <td style="min-width:120px"><div class="prog-wrap"><div class="prog-bar"><div class="prog-fill ${cls}" style="width:${pct}%"></div></div><span class="prog-pct">${pct}%</span></div></td>
+          <td style="text-align:right;font-family:var(--mono)">${v.precio?(v.entregado*v.precio).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</td>
+        </tr>`;
+      }).join('')}
+      </tbody></table>
+    </div>`;
+
+  if (datosPie.length > 1) setTimeout(() => drawPieChart('pie-cliente', datosPie), 50);
 }
 
 // ── ACORDEÓN ──
