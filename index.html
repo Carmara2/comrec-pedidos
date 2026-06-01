@@ -791,7 +791,12 @@ async function registrarEntrega(rowIndex, num, mes, anyo, cliente, material, pen
   try {
     const pedido = pedidos.find(p => p.rowIndex === rowIndex);
     const nuevaEntregada = pedido.cantEntregada + cantidad;
-    await apiCall({ action: 'appendRow', sheet: 'Entregas', row: JSON.stringify([fecha, num, mes, anyo, cliente, material, cantidad, obs]) });
+    // Calcular mes y año REALES de la fecha de entrega (no del pedido)
+    const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const [fy, fm] = fecha.split('-');
+    const mesReal = MESES[parseInt(fm) - 1];
+    const anyoReal = parseInt(fy);
+    await apiCall({ action: 'appendRow', sheet: 'Entregas', row: JSON.stringify([fecha, num, mesReal, anyoReal, cliente, material, cantidad, obs]) });
     await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: rowIndex, col: 8, value: nuevaEntregada });
     showMsg(msgOk, `✓ Entrega registrada: ${cantidad} uds. de ${material} en ${num}.`);
     await cargarDatos();
