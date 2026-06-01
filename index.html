@@ -417,7 +417,13 @@ function parseFecha(val) {
   return String(val).slice(0,10);
 }
 
-function today() { return new Date().toISOString().slice(0, 10); }
+function today() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 
 // ── HEADER ──
 document.getElementById('header-date').textContent = new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -711,16 +717,18 @@ function renderEntregasView() {
       </div>
     </div>`;
 
-  peds.forEach(p => {
+  peds.forEach((p, pi) => {
     const pend = p.cantPedida - p.cantEntregada;
     const pct = p.cantPedida ? Math.round(p.cantEntregada / p.cantPedida * 100) : 0;
     const entsLinea = entregas.filter(e => e.num === p.num && e.material === p.material);
     const accId = 'acc-' + p.rowIndex;
     const importePedido = p.cantPedida * p.precio;
     const importeEntregado = p.cantEntregada * p.precio;
+    const bgPedido = pi % 2 === 0 ? 'var(--surface)' : '#eef6f2';
+    const bgHead = pi % 2 === 0 ? 'var(--surface2)' : '#ddeee6';
 
-    html += `<div style="border-top:2px solid var(--border)">
-      <div style="padding:10px 16px;background:var(--surface2);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    html += `<div style="border-top:2px solid var(--accent);background:${bgPedido}">
+      <div style="padding:10px 16px;background:${bgHead};display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <span class="pedido-num">${p.num}</span>
         <span style="font-family:var(--mono);font-size:13px;background:var(--accent-light);color:var(--accent-text);border:1px solid var(--accent);border-radius:var(--radius);padding:3px 10px;font-weight:600">${p.precio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</span>
         <div style="display:flex;gap:16px;margin-left:auto;flex-wrap:wrap">
@@ -746,13 +754,24 @@ function renderEntregasView() {
       <div class="accordion-body" id="${accId}">
         ${entsLinea.length ? `<table><thead><tr>
           <th>Fecha</th><th style="text-align:right">Cantidad</th><th>Observaciones</th><th style="text-align:center">Acciones</th>
-        </tr></thead><tbody>${entsLinea.map(e => `<tr>
+        </tr></thead><tbody>${entsLinea.map(e => `<tr id="ent-row-${e.rowIndex}">
           <td style="font-family:var(--mono)">${e.fecha}</td>
           <td style="text-align:right;font-family:var(--mono);font-weight:500">${e.cantidad}</td>
           <td style="color:var(--text2)">${e.obs || '—'}</td>
           <td style="text-align:center;white-space:nowrap">
-            <button class="btn-sm" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="editarEntrega(${e.rowIndex},${p.rowIndex},'${p.num}','${p.material}',${e.cantidad})">✏️ Editar</button>
+            <button class="btn-sm" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="mostrarEdicionInline(${e.rowIndex},${p.rowIndex},'${e.fecha}',${e.cantidad},'${(e.obs||'').replace(/'/g,'\\\'')}')">✏️ Editar</button>
             <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="eliminarEntrega(${e.rowIndex},${p.rowIndex},${e.cantidad})">🗑 Eliminar</button>
+          </td>
+        </tr>
+        <tr id="ent-edit-${e.rowIndex}" style="display:none;background:var(--accent-light)">
+          <td colspan="4" style="padding:10px 14px">
+            <div style="display:grid;grid-template-columns:150px 110px 1fr auto auto;gap:8px;align-items:end">
+              <div class="field"><label>Fecha</label><input type="date" id="edit-fecha-${e.rowIndex}" value="${e.fecha}"></div>
+              <div class="field"><label>Cantidad</label><input type="number" id="edit-cant-${e.rowIndex}" value="${e.cantidad}" min="1" step="1"></div>
+              <div class="field"><label>Observaciones</label><input type="text" id="edit-obs-${e.rowIndex}" value="${e.obs||''}"></div>
+              <div class="field"><label style="opacity:0">_</label><button class="btn btn-success" style="font-size:12px;padding:6px 14px" onclick="guardarEdicionInline(${e.rowIndex},${p.rowIndex},${e.cantidad})">💾 Guardar</button></div>
+              <div class="field"><label style="opacity:0">_</label><button class="btn btn-secondary" style="font-size:12px;padding:6px 14px" onclick="cancelarEdicion(${e.rowIndex})">✕</button></div>
+            </div>
           </td>
         </tr>`).join('')}</tbody></table>` : `<div style="padding:12px 16px;color:var(--text3);font-size:13px">Sin entregas registradas aún</div>`}
       </div>
@@ -799,48 +818,59 @@ async function registrarEntrega(rowIndex, num, mes, anyo, cliente, material, pen
   showLoading(false);
 }
 
-// ── EDITAR ENTREGA ──
-async function editarEntrega(entRowIndex, pedRowIndex, num, material, cantAnterior) {
-  const entrega = entregas.find(e => e.rowIndex === entRowIndex);
-  if (!entrega) return;
-  const nuevaFecha = prompt('Fecha de entrega (AAAA-MM-DD):', entrega.fecha);
-  if (nuevaFecha === null) return;
-  const nuevaCant = parseInt(prompt('Cantidad:', entrega.cantidad));
-  if (!nuevaCant || isNaN(nuevaCant)) { alert('Cantidad no válida.'); return; }
-  const nuevaObs = prompt('Observaciones:', entrega.obs || '');
-  if (nuevaObs === null) return;
+// ── EDICIÓN INLINE DE ENTREGAS ──
+function mostrarEdicionInline(entRowIndex, pedRowIndex, fecha, cantidad, obs) {
+  // Ocultar otras ediciones abiertas
+  document.querySelectorAll('[id^="ent-edit-"]').forEach(r => r.style.display = 'none');
+  const row = document.getElementById('ent-edit-' + entRowIndex);
+  if (row) row.style.display = 'table-row';
+}
+
+function cancelarEdicion(entRowIndex) {
+  const row = document.getElementById('ent-edit-' + entRowIndex);
+  if (row) row.style.display = 'none';
+}
+
+async function guardarEdicionInline(entRowIndex, pedRowIndex, cantAnterior) {
+  const nuevaFecha = document.getElementById('edit-fecha-' + entRowIndex).value;
+  const nuevaCant = parseInt(document.getElementById('edit-cant-' + entRowIndex).value) || 0;
+  const nuevaObs = document.getElementById('edit-obs-' + entRowIndex).value.trim();
+  const msgOk = document.getElementById('msg-e-ok'), msgErr = document.getElementById('msg-e-err');
+
+  if (!nuevaFecha || !nuevaCant) { showMsg(msgErr, 'Indica fecha y cantidad válidas.'); return; }
+
   const diff = nuevaCant - cantAnterior;
   const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
+
   showLoading(true);
   try {
     await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 1, value: nuevaFecha });
     await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 7, value: nuevaCant });
     await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 8, value: nuevaObs });
     if (pedido && diff !== 0) {
-      await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: pedido.cantEntregada + diff });
+      await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: Math.max(0, pedido.cantEntregada + diff) });
     }
-    const msgOk = document.getElementById('msg-e-ok');
     showMsg(msgOk, '✓ Entrega actualizada correctamente.');
     await cargarDatos();
     renderEntregasView();
-  } catch(e) { alert('Error al editar la entrega.'); }
+  } catch(e) { showMsg(msgErr, 'Error al guardar los cambios.'); }
   showLoading(false);
 }
 
-// ── ELIMINAR ENTREGA ──
 async function eliminarEntrega(entRowIndex, pedRowIndex, cantAnterior) {
   if (!confirm(`¿Eliminar esta entrega de ${cantAnterior} uds.? No se puede deshacer.`)) return;
   const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
+  const msgOk = document.getElementById('msg-e-ok'), msgErr = document.getElementById('msg-e-err');
   showLoading(true);
   try {
     await apiCall({ action: 'deleteRow', sheet: 'Entregas', row: entRowIndex });
     if (pedido) {
       await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: Math.max(0, pedido.cantEntregada - cantAnterior) });
     }
-    showMsg(document.getElementById('msg-e-ok'), '✓ Entrega eliminada.');
+    showMsg(msgOk, '✓ Entrega eliminada correctamente.');
     await cargarDatos();
     renderEntregasView();
-  } catch(e) { alert('Error al eliminar la entrega.'); }
+  } catch(e) { showMsg(msgErr, 'Error al eliminar la entrega.'); }
   showLoading(false);
 }
 
@@ -860,29 +890,45 @@ function renderHistorial() {
     <th style="text-align:right">Cantidad</th><th>Observaciones</th><th style="text-align:center">Acciones</th>
   </tr></thead><tbody>${[...entregas].reverse().map(e => {
     const pedido = pedidos.find(p => p.num === e.num && p.material === e.material);
-    return `<tr>
+    const pedRowIndex = pedido ? pedido.rowIndex : 0;
+    return `<tr id="hedit-data-${e.rowIndex}">
       <td style="font-family:var(--mono)">${e.fecha}</td>
       <td style="font-family:var(--mono);font-weight:500">${e.num}</td>
       <td>${e.mes} ${e.anyo}</td><td>${e.cliente}</td><td>${e.material}</td>
       <td style="text-align:right;font-family:var(--mono);font-weight:500">${e.cantidad}</td>
       <td style="color:var(--text2)">${e.obs || '—'}</td>
       <td style="text-align:center;white-space:nowrap">
-        <button class="btn-sm" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="editarEntregaHistorial(${e.rowIndex},${pedido ? pedido.rowIndex : 0},'${e.num}','${e.material}',${e.cantidad})">✏️</button>
-        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="eliminarEntregaHistorial(${e.rowIndex},${pedido ? pedido.rowIndex : 0},${e.cantidad})">🗑</button>
+        <button class="btn-sm" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="editarEntregaHistorial(${e.rowIndex},${pedRowIndex},'${e.num}','${e.material}',${e.cantidad})">✏️</button>
+        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="eliminarEntregaHistorial(${e.rowIndex},${pedRowIndex},${e.cantidad})">🗑</button>
+      </td>
+    </tr>
+    <tr id="hedit-row-${e.rowIndex}" style="display:none;background:var(--accent-light)">
+      <td colspan="8" style="padding:10px 14px">
+        <div style="display:grid;grid-template-columns:150px 110px 1fr auto auto;gap:8px;align-items:end">
+          <div class="field"><label>Fecha</label><input type="date" id="hedit-fecha-${e.rowIndex}" value="${e.fecha}"></div>
+          <div class="field"><label>Cantidad</label><input type="number" id="hedit-cant-${e.rowIndex}" value="${e.cantidad}" min="1" step="1"></div>
+          <div class="field"><label>Observaciones</label><input type="text" id="hedit-obs-${e.rowIndex}" value="${e.obs||''}"></div>
+          <div class="field"><label style="opacity:0">_</label><button class="btn btn-success" style="font-size:12px;padding:6px 14px" onclick="guardarEdicionHistorial(${e.rowIndex},${pedRowIndex},${e.cantidad})">💾 Guardar</button></div>
+          <div class="field"><label style="opacity:0">_</label><button class="btn btn-secondary" style="font-size:12px;padding:6px 14px" onclick="document.getElementById('hedit-row-${e.rowIndex}').style.display='none'">✕</button></div>
+        </div>
       </td>
     </tr>`;
   }).join('')}</tbody></table>`;
 }
 
+
 async function editarEntregaHistorial(entRowIndex, pedRowIndex, num, material, cantAnterior) {
-  const entrega = entregas.find(e => e.rowIndex === entRowIndex);
-  if (!entrega) return;
-  const nuevaFecha = prompt('Fecha de entrega (AAAA-MM-DD):', entrega.fecha);
-  if (nuevaFecha === null) return;
-  const nuevaCant = parseInt(prompt('Cantidad:', entrega.cantidad));
-  if (!nuevaCant || isNaN(nuevaCant)) { alert('Cantidad no válida.'); return; }
-  const nuevaObs = prompt('Observaciones:', entrega.obs || '');
-  if (nuevaObs === null) return;
+  // Mostrar/ocultar fila de edición inline en historial
+  document.querySelectorAll('[id^="hedit-row-"]').forEach(r => { if (r.id !== 'hedit-row-'+entRowIndex) r.style.display='none'; });
+  const row = document.getElementById('hedit-row-' + entRowIndex);
+  if (row) { row.style.display = row.style.display === 'none' ? 'table-row' : 'none'; }
+}
+
+async function guardarEdicionHistorial(entRowIndex, pedRowIndex, cantAnterior) {
+  const nuevaFecha = document.getElementById('hedit-fecha-' + entRowIndex).value;
+  const nuevaCant = parseInt(document.getElementById('hedit-cant-' + entRowIndex).value) || 0;
+  const nuevaObs = document.getElementById('hedit-obs-' + entRowIndex).value.trim();
+  if (!nuevaFecha || !nuevaCant) { alert('Indica fecha y cantidad válidas.'); return; }
   const diff = nuevaCant - cantAnterior;
   const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
   showLoading(true);
@@ -891,11 +937,10 @@ async function editarEntregaHistorial(entRowIndex, pedRowIndex, num, material, c
     await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 7, value: nuevaCant });
     await apiCall({ action: 'updateCell', sheet: 'Entregas', row: entRowIndex, col: 8, value: nuevaObs });
     if (pedido && diff !== 0) {
-      await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: pedido.cantEntregada + diff });
+      await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: Math.max(0, pedido.cantEntregada + diff) });
     }
-    await cargarDatos();
-    renderHistorial();
-  } catch(e) { alert('Error al editar.'); }
+    await cargarDatos(); renderHistorial();
+  } catch(e) { alert('Error al guardar.'); }
   showLoading(false);
 }
 
@@ -908,12 +953,10 @@ async function eliminarEntregaHistorial(entRowIndex, pedRowIndex, cantAnterior) 
     if (pedido) {
       await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: Math.max(0, pedido.cantEntregada - cantAnterior) });
     }
-    await cargarDatos();
-    renderHistorial();
+    await cargarDatos(); renderHistorial();
   } catch(e) { alert('Error al eliminar.'); }
   showLoading(false);
 }
-
 
 // ── LISTAS ──
 function renderTags() {
