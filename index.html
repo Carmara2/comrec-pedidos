@@ -1116,45 +1116,45 @@ function renderAnaliticaMaterial() {
   const wrap = document.getElementById('resultado-material');
   if (!mat) { wrap.innerHTML = ''; return; }
 
+  const MESES_IDX = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
   const periodoLabel = periodo ? (() => {
-    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     const [y, m] = periodo.split('-');
-    return `${meses[parseInt(m)-1]} ${y}`;
+    return `${MESES_IDX[parseInt(m)-1]} ${y}`;
   })() : '';
 
-  // Pedidos del material (filtrados por período si se selecciona)
+  // Pedidos del material filtrados por período del pedido
   let pedsMat = pedidos.filter(p => p.material === mat);
   if (periodo) {
     pedsMat = pedsMat.filter(p => {
-      const mesIdx = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].indexOf(p.mes);
-      const ym = `${p.anyo}-${String(mesIdx+1).padStart(2,'0')}`;
+      const ym = `${p.anyo}-${String(MESES_IDX.indexOf(p.mes)+1).padStart(2,'0')}`;
       return ym === periodo;
     });
   }
 
   if (!pedsMat.length) {
-    wrap.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay pedidos de ${mat}${periodoLabel ? ' en ' + periodoLabel : ''}</div>`;
+    wrap.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel ? ' en ' + periodoLabel : ''}</div>`;
     return;
   }
 
-  // Agrupar pedidos por cliente: cantPedida y cantEntregada acumuladas
+  // Agrupar por cliente
   const porCliente = {};
   pedsMat.forEach(p => {
-    if (!porCliente[p.cliente]) porCliente[p.cliente] = { pedido: 0, entregado: 0, precio: p.precio };
-    porCliente[p.cliente].pedido += p.cantPedida;
+    if (!porCliente[p.cliente]) porCliente[p.cliente] = { pedido: 0, entregado: 0 };
+    porCliente[p.cliente].pedido    += p.cantPedida;
     porCliente[p.cliente].entregado += p.cantEntregada;
   });
 
-  const clientes = Object.entries(porCliente).sort((a, b) => b[1].pedido - a[1].pedido);
-  const totalPedido = clientes.reduce((s, [, v]) => s + v.pedido, 0);
-  const totalEntregado = clientes.reduce((s, [, v]) => s + v.entregado, 0);
+  const clientes = Object.entries(porCliente).sort((a,b) => b[1].pedido - a[1].pedido);
+  const totalPedido    = clientes.reduce((s,[,v]) => s + v.pedido, 0);
+  const totalEntregado = clientes.reduce((s,[,v]) => s + v.entregado, 0);
   const totalPendiente = totalPedido - totalEntregado;
 
   // Precio medio ponderado por entregas en el período
   let ents = entregas.filter(e => e.material === mat);
   if (periodo) ents = ents.filter(e => {
     if (!e.fecha) return false;
-    const [y, m] = e.fecha.split('-');
+    const [y,m] = e.fecha.split('-');
     return `${y}-${m.padStart(2,'0')}` === periodo;
   });
   let totalCantP = 0, totalImpP = 0;
@@ -1164,63 +1164,76 @@ function renderAnaliticaMaterial() {
   });
   const precioMedio = totalCantP > 0 ? totalImpP / totalCantP : (pedsMat[0]?.precio || 0);
 
-  // Datos para gráficos (% sobre total pedido)
-  const datosEnt = clientes.map(([cli, v]) => ({ label: cli, valor: v.entregado })).filter(d => d.valor > 0);
-  const datosPend = clientes.map(([cli, v]) => ({ label: cli, valor: Math.max(0, v.pedido - v.entregado) })).filter(d => d.valor > 0);
+  // Preparar datos tartas — AMBAS usan totalPedido como base del 100%
+  // Tarta 1: sector por cliente = su entregado; el resto hasta totalPedido queda implícito
+  // Pero queremos mostrar SOLO entregados repartidos por cliente, con % sobre totalPedido
+  const datosEnt  = clientes.map(([cli, v], i) => ({ label: cli, valor: v.entregado,              color: COLORS[i % COLORS.length] })).filter(d => d.valor > 0);
+  const datosPend = clientes.map(([cli, v], i) => ({ label: cli, valor: Math.max(0, v.pedido - v.entregado), color: COLORS[i % COLORS.length] })).filter(d => d.valor > 0);
 
   wrap.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
-      <div class="stat-card"><div class="stat-label">Total pedido</div><div class="stat-value">${totalPedido.toLocaleString('es-ES')} uds.</div></div>
-      <div class="stat-card"><div class="stat-label">Total entregado</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES')} uds. (${totalPedido?Math.round(totalEntregado/totalPedido*100):0}%)</div></div>
-      <div class="stat-card"><div class="stat-label">Total pendiente</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES')} uds. (${totalPedido?Math.round(totalPendiente/totalPedido*100):0}%)</div></div>
-      <div class="stat-card"><div class="stat-label">Precio medio</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</div></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+      <div class="stat-card"><div class="stat-label">Total pedido${periodoLabel?' ('+periodoLabel+')':''}</div><div class="stat-value">${totalPedido.toLocaleString('es-ES')} uds.</div></div>
+      <div class="stat-card"><div class="stat-label">Total entregado</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES')} uds. · ${totalPedido?Math.round(totalEntregado/totalPedido*100):0}%</div></div>
+      <div class="stat-card"><div class="stat-label">Total pendiente</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES')} uds. · ${totalPedido?Math.round(totalPendiente/totalPedido*100):0}%</div></div>
+      <div class="stat-card"><div class="stat-label">Precio medio ponderado</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</div></div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
 
-      <!-- TARTA ENTREGADO -->
+      <!-- TARTA 1: ENTREGADO -->
       <div class="card" style="padding:20px">
-        <div class="sec-label" style="margin-bottom:4px">Entregado por cliente</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:14px">% sobre el total pedido (${totalPedido.toLocaleString('es-ES')} uds.)</div>
+        <div class="sec-label">Entregado por cliente</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:14px">
+          Cada sector = % entregado de ese cliente sobre el <b>total pedido</b> (${totalPedido.toLocaleString('es-ES')} uds.)
+        </div>
         ${datosEnt.length ? `
-        <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
-          <canvas id="pie-mat-ent" width="220" height="220" style="flex-shrink:0"></canvas>
-          <div style="flex:1;min-width:150px">
-            ${clientes.map(([cli, v], i) => `
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+          <canvas id="pie-mat-ent" width="200" height="200" style="flex-shrink:0"></canvas>
+          <div style="flex:1;min-width:140px">
+            ${clientes.map(([cli,v],i) => `
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px">
                 <div style="width:11px;height:11px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
                 <div style="flex:1;font-size:12px">${cli}</div>
-                <div style="font-family:var(--mono);font-size:11px;font-weight:500">${v.entregado.toLocaleString('es-ES')}</div>
-                <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPedido?Math.round(v.entregado/totalPedido*100):0}%</div>
+                <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent)">${v.entregado.toLocaleString('es-ES')}</div>
+                <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:32px;text-align:right">${totalPedido?Math.round(v.entregado/totalPedido*100):0}%</div>
               </div>`).join('')}
+            <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;font-family:var(--mono);font-size:11px;color:var(--text2)">
+              Total entregado: <b>${totalEntregado.toLocaleString('es-ES')}</b> de ${totalPedido.toLocaleString('es-ES')} (${totalPedido?Math.round(totalEntregado/totalPedido*100):0}%)
+            </div>
           </div>
-        </div>` : `<div class="empty-state">Sin entregas registradas</div>`}
+        </div>` : `<div class="empty-state" style="padding:1.5rem">Sin entregas registradas aún</div>`}
       </div>
 
-      <!-- TARTA PENDIENTE -->
+      <!-- TARTA 2: PENDIENTE -->
       <div class="card" style="padding:20px">
-        <div class="sec-label" style="margin-bottom:4px">Pendiente por cliente</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:14px">% sobre el total pedido (${totalPedido.toLocaleString('es-ES')} uds.)</div>
+        <div class="sec-label">Pendiente por cliente</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:14px">
+          Cada sector = % pendiente de ese cliente sobre el <b>total pedido</b> (${totalPedido.toLocaleString('es-ES')} uds.)
+        </div>
         ${datosPend.length ? `
-        <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
-          <canvas id="pie-mat-pend" width="220" height="220" style="flex-shrink:0"></canvas>
-          <div style="flex:1;min-width:150px">
-            ${clientes.filter(([,v]) => v.pedido - v.entregado > 0).map(([cli, v], i) => `
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+          <canvas id="pie-mat-pend" width="200" height="200" style="flex-shrink:0"></canvas>
+          <div style="flex:1;min-width:140px">
+            ${clientes.filter(([,v]) => v.pedido - v.entregado > 0).map(([cli,v],i) => `
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px">
                 <div style="width:11px;height:11px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
                 <div style="flex:1;font-size:12px">${cli}</div>
-                <div style="font-family:var(--mono);font-size:11px;font-weight:500">${(v.pedido-v.entregado).toLocaleString('es-ES')}</div>
-                <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPedido?Math.round((v.pedido-v.entregado)/totalPedido*100):0}%</div>
+                <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--warn)">${(v.pedido-v.entregado).toLocaleString('es-ES')}</div>
+                <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:32px;text-align:right">${totalPedido?Math.round((v.pedido-v.entregado)/totalPedido*100):0}%</div>
               </div>`).join('')}
+            <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;font-family:var(--mono);font-size:11px;color:var(--text2)">
+              Total pendiente: <b>${totalPendiente.toLocaleString('es-ES')}</b> de ${totalPedido.toLocaleString('es-ES')} (${totalPedido?Math.round(totalPendiente/totalPedido*100):0}%)
+            </div>
           </div>
-        </div>` : `<div class="empty-state" style="padding:1rem">✅ Todo entregado</div>`}
+        </div>` : `<div class="empty-state" style="padding:1.5rem">✅ Todo entregado</div>`}
       </div>
 
     </div>`;
 
+  // Dibujar tartas con % sobre totalPedido
   setTimeout(() => {
-    if (datosEnt.length) drawPieChart('pie-mat-ent', datosEnt.map((d,i) => ({...d, color: COLORS[i%COLORS.length]})), totalPedido);
-    if (datosPend.length) drawPieChart('pie-mat-pend', datosPend.map((d,i) => ({...d, color: COLORS[i%COLORS.length]})), totalPedido);
+    if (datosEnt.length)  drawPieChart('pie-mat-ent',  datosEnt,  totalPedido);
+    if (datosPend.length) drawPieChart('pie-mat-pend', datosPend, totalPedido);
   }, 50);
 }
 
