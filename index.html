@@ -1189,15 +1189,13 @@ function renderAnaliticaCliente() {
     return `${y}-${m.padStart(2,'0')}` === periodo;
   });
 
-  // Pedidos activos del cliente
   const pedsCliente = pedidos.filter(p => p.cliente === cli);
-
   if (!ents.length && !pedsCliente.length) {
     wrap.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay datos para ${cli}</div>`;
     return;
   }
 
-  // Agrupar por material
+  // Agrupar por material acumulando todos los pedidos
   const porMaterial = {};
   pedsCliente.forEach(p => {
     if (!porMaterial[p.material]) porMaterial[p.material] = { pedido: 0, entregado: 0, precio: p.precio };
@@ -1205,66 +1203,92 @@ function renderAnaliticaCliente() {
     porMaterial[p.material].entregado += p.cantEntregada;
   });
 
-  // Añadir datos de entregas históricas
-  ents.forEach(e => {
-    if (!porMaterial[e.material]) porMaterial[e.material] = { pedido: 0, entregado: 0, precio: 0 };
-  });
-
-  const mats = Object.entries(porMaterial).sort((a, b) => b[1].entregado - a[1].entregado);
+  const mats = Object.entries(porMaterial).sort((a, b) => a[0].localeCompare(b[0], 'es'));
   const totalEntregado = mats.reduce((s, [, v]) => s + v.entregado, 0);
   const totalPedido = mats.reduce((s, [, v]) => s + v.pedido, 0);
   const importeTotal = mats.reduce((s, [, v]) => s + v.entregado * v.precio, 0);
 
-  const datosPie = mats.map(([k, v]) => ({ label: k, valor: v.entregado })).filter(d => d.valor > 0);
-
-  wrap.innerHTML = `
+  // Resumen global
+  let html = `
     <div class="g-stats4" style="margin-bottom:16px">
       <div class="stat-card"><div class="stat-label">Materiales distintos</div><div class="stat-value">${mats.length}</div></div>
       <div class="stat-card"><div class="stat-label">Total pedido</div><div class="stat-value">${totalPedido.toLocaleString('es-ES')}</div></div>
       <div class="stat-card"><div class="stat-label">Total entregado</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES')}</div></div>
       <div class="stat-card"><div class="stat-label">Importe entregado</div><div class="stat-value">${importeTotal.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
     </div>
-    ${datosPie.length > 1 ? `
-    <div class="card" style="display:grid;grid-template-columns:280px 1fr;gap:24px;align-items:center;margin-bottom:16px">
-      <canvas id="pie-cliente" width="280" height="280"></canvas>
-      <div>
-        <div class="sec-label" style="margin-bottom:12px">Distribución por material</div>
-        ${datosPie.map((d, i) => `
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-            <div style="width:12px;height:12px;border-radius:50%;background:${COLORS[i % COLORS.length]};flex-shrink:0"></div>
-            <div style="flex:1;font-size:13px">${d.label}</div>
-            <div style="font-family:var(--mono);font-size:12px;font-weight:500">${d.valor.toLocaleString('es-ES')} uds.</div>
-            <div style="font-family:var(--mono);font-size:12px;color:var(--text3);min-width:40px;text-align:right">${Math.round(d.valor/totalEntregado*100)}%</div>
-          </div>`).join('')}
-      </div>
-    </div>` : ''}
-    <div class="card card-noPad">
-      <div class="card-header"><span class="sec-label" style="margin:0">Detalle por material</span></div>
-      <table><thead><tr>
-        <th>Material</th><th style="text-align:right">Precio</th>
-        <th style="text-align:right">Pedido</th><th style="text-align:right">Entregado</th>
-        <th style="text-align:right">Pendiente</th><th>Progreso</th>
-        <th style="text-align:right">Importe entregado</th>
-      </tr></thead><tbody>
-      ${mats.map(([mat, v]) => {
-        const pend = v.pedido - v.entregado;
-        const pct = v.pedido ? Math.round(v.entregado / v.pedido * 100) : 100;
-        const cls = pct >= 100 ? 'prog-green' : 'prog-amber';
-        return `<tr>
-          <td style="font-weight:500">${mat}</td>
-          <td style="text-align:right;font-family:var(--mono)">${v.precio ? v.precio.toLocaleString('es-ES',{minimumFractionDigits:2})+' €' : '—'}</td>
-          <td style="text-align:right;font-family:var(--mono)">${v.pedido.toLocaleString('es-ES')}</td>
-          <td style="text-align:right;font-family:var(--mono);color:var(--accent);font-weight:500">${v.entregado.toLocaleString('es-ES')}</td>
-          <td style="text-align:right;font-family:var(--mono);color:${pend>0?'var(--warn)':'var(--accent)'};font-weight:500">${pend.toLocaleString('es-ES')}</td>
-          <td style="min-width:120px"><div class="prog-wrap"><div class="prog-bar"><div class="prog-fill ${cls}" style="width:${pct}%"></div></div><span class="prog-pct">${pct}%</span></div></td>
-          <td style="text-align:right;font-family:var(--mono)">${v.precio?(v.entregado*v.precio).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</td>
-        </tr>`;
-      }).join('')}
-      </tbody></table>
-    </div>`;
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:16px">`;
 
-  if (datosPie.length > 1) setTimeout(() => drawPieChart('pie-cliente', datosPie), 50);
+  mats.forEach(([mat, v], idx) => {
+    const pend = v.pedido - v.entregado;
+    const pct = v.pedido ? Math.round(v.entregado / v.pedido * 100) : 0;
+    const canvasId = `pie-cli-${idx}`;
+    const colEnt = '#2a5c45';   // verde acento
+    const colPend = '#e07b39';  // ámbar
+
+    html += `<div class="card" style="padding:16px;text-align:center">
+      <div style="font-weight:600;font-size:13px;margin-bottom:12px;color:var(--text)">${mat}</div>
+      <canvas id="${canvasId}" width="200" height="200" style="max-width:100%"></canvas>
+      <div style="margin-top:10px;display:flex;justify-content:center;gap:16px;font-size:12px">
+        <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${colEnt}"></span>Entregado</span>
+        <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${colPend}"></span>Pendiente</span>
+      </div>
+      <div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--text2)">
+        <div style="color:var(--accent);font-weight:500">${v.entregado.toLocaleString('es-ES')} entregado (${pct}%)</div>
+        <div style="color:var(--warn)">${pend.toLocaleString('es-ES')} pendiente</div>
+        <div style="margin-top:4px">${v.precio ? v.precio.toLocaleString('es-ES',{minimumFractionDigits:2})+' €/ud' : ''}</div>
+      </div>
+    </div>`;
+  });
+
+  html += `</div>`;
+  wrap.innerHTML = html;
+
+  // Dibujar tartas
+  setTimeout(() => {
+    mats.forEach(([mat, v], idx) => {
+      const pend = v.pedido - v.entregado;
+      const canvasId = `pie-cli-${idx}`;
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      const cx = W/2, cy = H/2, r = Math.min(cx, cy) - 6;
+      ctx.clearRect(0, 0, W, H);
+      const datos = [
+        { valor: v.entregado, color: '#2a5c45' },
+        { valor: pend > 0 ? pend : 0, color: '#e07b39' }
+      ].filter(d => d.valor > 0);
+      if (!datos.length) return;
+      const total = datos.reduce((s, d) => s + d.valor, 0);
+      let angle = -Math.PI / 2;
+      datos.forEach(d => {
+        const slice = (d.valor / total) * 2 * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, angle, angle + slice);
+        ctx.closePath();
+        ctx.fillStyle = d.color;
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Porcentaje dentro si slice > 0.3rad
+        if (slice > 0.3) {
+          const mid = angle + slice / 2;
+          const lx = cx + (r * 0.65) * Math.cos(mid);
+          const ly = cy + (r * 0.65) * Math.sin(mid);
+          ctx.fillStyle = '#fff';
+          ctx.font = 'bold 13px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(Math.round(d.valor / total * 100) + '%', lx, ly);
+        }
+        angle += slice;
+      });
+    });
+  }, 50);
 }
+
 
 // ── ACORDEÓN ──
 function toggleAcc(id) {
