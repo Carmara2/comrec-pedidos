@@ -378,7 +378,7 @@ tbody tr:hover td { background: var(--bg); }
 
 <script>
 // ── CONFIG ──
-const API = 'https://script.google.com/macros/s/AKfycbztFG_dlk4anP_U8-jp1xP_xFFVxMJtZlIDTYwWmVyzQ9kdxBhn4Ff01QnoXnlUukNtBg/exec';
+const API = 'https://script.google.com/macros/s/AKfycbx1jH__BnFPF1MzWAfLI0AR2zSO-j0Ue9rYHPuSlGJOJyo-CBbV7TtEdH2qMwboKo0Xiw/exec';
 
 // ── LOGO EN BASE64 (incrustado) ──
 
@@ -1139,8 +1139,7 @@ function renderAnaliticaMaterial() {
   const datos = Object.entries(porCliente).map(([k, v]) => ({ label: k, valor: v })).sort((a, b) => b.valor - a.valor);
   const totalEnt = datos.reduce((s, d) => s + d.valor, 0);
 
-  // Precio medio ponderado por cantidad entregada en el período
-  // Para cada entrega, buscamos el precio del pedido correspondiente
+  // Precio medio ponderado
   let totalCantPonderada = 0, totalImportePonderado = 0;
   ents.forEach(e => {
     const ped = pedidos.find(p => p.num === e.num && p.material === e.material);
@@ -1151,17 +1150,24 @@ function renderAnaliticaMaterial() {
   });
   const precioMedio = totalCantPonderada > 0 ? totalImportePonderado / totalCantPonderada : 0;
 
+  // HTML: resumen + tarta distribución por cliente
   wrap.innerHTML = `
     <div class="g2" style="margin-bottom:16px">
       <div class="stat-card"><div class="stat-label">Total entregado (${mat})</div><div class="stat-value">${totalEnt.toLocaleString('es-ES')} uds.</div></div>
-      <div class="stat-card"><div class="stat-label">Precio medio</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</div></div>
+      <div class="stat-card"><div class="stat-label">Precio medio ponderado</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</div></div>
     </div>
-    <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center">
-      <div>
-        <canvas id="pie-material" width="280" height="280"></canvas>
+    <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center;margin-bottom:16px">
+      <div style="text-align:center">
+        <div class="sec-label" style="margin-bottom:8px">% entregado por cliente</div>
+        <canvas id="pie-material" width="260" height="260"></canvas>
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;justify-content:center;gap:8px">
+          ${datos.map((d, i) => `<span style="display:flex;align-items:center;gap:4px;font-size:11px">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${COLORS[i % COLORS.length]}"></span>${d.label}
+          </span>`).join('')}
+        </div>
       </div>
       <div>
-        <div class="sec-label" style="margin-bottom:12px">Distribución por cliente</div>
+        <div class="sec-label" style="margin-bottom:12px">Detalle por cliente</div>
         ${datos.map((d, i) => `
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
             <div style="width:12px;height:12px;border-radius:50%;background:${COLORS[i % COLORS.length]};flex-shrink:0"></div>
@@ -1174,6 +1180,7 @@ function renderAnaliticaMaterial() {
 
   setTimeout(() => drawPieChart('pie-material', datos), 50);
 }
+
 
 function renderAnaliticaCliente() {
   const cli = document.getElementById('a-cliente').value;
