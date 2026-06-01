@@ -1188,61 +1188,84 @@ function renderAnaliticaCliente() {
   const wrap = document.getElementById('resultado-cliente');
   if (!cli) { wrap.innerHTML = ''; return; }
 
-  // Filtrar entregas por cliente y período (fecha real de entrega)
-  let ents = entregas.filter(e => e.cliente === cli);
-  if (periodo) ents = ents.filter(e => {
-    if (!e.fecha) return false;
-    const [y, m] = e.fecha.split('-');
-    return `${y}-${m.padStart(2,'0')}` === periodo;
-  });
-
   const pedsCliente = pedidos.filter(p => p.cliente === cli);
-  if (!ents.length && !pedsCliente.length) {
+  if (!pedsCliente.length) {
     wrap.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay datos para ${cli}</div>`;
     return;
   }
 
-  // Agrupar por material acumulando todos los pedidos
+  const periodoLabel = periodo ? (() => {
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const [y, m] = periodo.split('-');
+    return `${meses[parseInt(m)-1]} ${y}`;
+  })() : '';
+
+  // Agrupar pedidos por material
   const porMaterial = {};
   pedsCliente.forEach(p => {
-    if (!porMaterial[p.material]) porMaterial[p.material] = { pedido: 0, entregado: 0, precio: p.precio };
+    if (!porMaterial[p.material]) porMaterial[p.material] = { pedido: 0, precio: p.precio };
     porMaterial[p.material].pedido += p.cantPedida;
-    porMaterial[p.material].entregado += p.cantEntregada;
+  });
+
+  // Para cada material calcular entregado en período, entregado en otros períodos, pendiente
+  const entregasCliente = entregas.filter(e => e.cliente === cli);
+  Object.keys(porMaterial).forEach(mat => {
+    const entsMat = entregasCliente.filter(e => e.material === mat);
+    let entPeriodo = 0, entOtros = 0;
+    entsMat.forEach(e => {
+      if (!e.fecha) return;
+      const [y, m] = e.fecha.split('-');
+      const ym = `${y}-${m.padStart(2,'0')}`;
+      if (periodo && ym === periodo) entPeriodo += e.cantidad;
+      else entOtros += e.cantidad;
+    });
+    porMaterial[mat].entPeriodo = entPeriodo;
+    porMaterial[mat].entOtros = entOtros;
+    porMaterial[mat].pendiente = Math.max(0, porMaterial[mat].pedido - entPeriodo - entOtros);
   });
 
   const mats = Object.entries(porMaterial).sort((a, b) => a[0].localeCompare(b[0], 'es'));
-  const totalEntregado = mats.reduce((s, [, v]) => s + v.entregado, 0);
   const totalPedido = mats.reduce((s, [, v]) => s + v.pedido, 0);
-  const importeTotal = mats.reduce((s, [, v]) => s + v.entregado * v.precio, 0);
+  const totalEntPeriodo = mats.reduce((s, [, v]) => s + v.entPeriodo, 0);
+  const totalEntOtros = mats.reduce((s, [, v]) => s + v.entOtros, 0);
+  const totalPendiente = mats.reduce((s, [, v]) => s + v.pendiente, 0);
+  const importeTotal = mats.reduce((s, [, v]) => s + (v.entPeriodo + v.entOtros) * v.precio, 0);
+
+  const colPeriodo = '#2a5c45';   // verde — entregado en período
+  const colOtros   = '#5b9bd5';   // azul  — entregado otros períodos
+  const colPend    = '#e07b39';   // ámbar — pendiente
 
   // Resumen global
   let html = `
-    <div class="g-stats4" style="margin-bottom:16px">
-      <div class="stat-card"><div class="stat-label">Materiales distintos</div><div class="stat-value">${mats.length}</div></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+      <div class="stat-card"><div class="stat-label">Materiales</div><div class="stat-value">${mats.length}</div></div>
       <div class="stat-card"><div class="stat-label">Total pedido</div><div class="stat-value">${totalPedido.toLocaleString('es-ES')}</div></div>
-      <div class="stat-card"><div class="stat-label">Total entregado</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES')}</div></div>
-      <div class="stat-card"><div class="stat-label">Importe entregado</div><div class="stat-value">${importeTotal.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+      <div class="stat-card"><div class="stat-label">${periodo ? 'Entregado en '+periodoLabel : 'Total entregado'}</div><div class="stat-value green">${(totalEntPeriodo + (periodo ? 0 : totalEntOtros)).toLocaleString('es-ES')}</div></div>
+      <div class="stat-card"><div class="stat-label">Pendiente</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES')}</div></div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:16px">`;
+    <div style="display:flex;gap:16px;margin-bottom:10px;font-size:12px;flex-wrap:wrap">
+      <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${colPeriodo}"></span>${periodo ? 'Entregado en '+periodoLabel : 'Entregado'}</span>
+      ${periodo ? `<span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${colOtros}"></span>Entregado otros períodos</span>` : ''}
+      <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${colPend}"></span>Pendiente</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:16px">`;
 
   mats.forEach(([mat, v], idx) => {
-    const pend = v.pedido - v.entregado;
-    const pct = v.pedido ? Math.round(v.entregado / v.pedido * 100) : 0;
     const canvasId = `pie-cli-${idx}`;
-    const colEnt = '#2a5c45';   // verde acento
-    const colPend = '#e07b39';  // ámbar
+    const total = v.pedido;
+    const pct = total ? Math.round((v.entPeriodo + v.entOtros) / total * 100) : 0;
+    const pctPeriodo = total ? Math.round(v.entPeriodo / total * 100) : 0;
+    const pctOtros = total ? Math.round(v.entOtros / total * 100) : 0;
+    const pctPend = total ? Math.round(v.pendiente / total * 100) : 0;
 
-    html += `<div class="card" style="padding:16px;text-align:center">
-      <div style="font-weight:600;font-size:13px;margin-bottom:12px;color:var(--text)">${mat}</div>
-      <canvas id="${canvasId}" width="200" height="200" style="max-width:100%"></canvas>
-      <div style="margin-top:10px;display:flex;justify-content:center;gap:16px;font-size:12px">
-        <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${colEnt}"></span>Entregado</span>
-        <span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${colPend}"></span>Pendiente</span>
-      </div>
-      <div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--text2)">
-        <div style="color:var(--accent);font-weight:500">${v.entregado.toLocaleString('es-ES')} entregado (${pct}%)</div>
-        <div style="color:var(--warn)">${pend.toLocaleString('es-ES')} pendiente</div>
-        <div style="margin-top:4px">${v.precio ? v.precio.toLocaleString('es-ES',{minimumFractionDigits:2})+' €/ud' : ''}</div>
+    html += `<div class="card" style="padding:14px;text-align:center">
+      <div style="font-weight:600;font-size:12px;margin-bottom:10px;color:var(--text);min-height:32px;display:flex;align-items:center;justify-content:center">${mat}</div>
+      <canvas id="${canvasId}" width="180" height="180" style="max-width:100%"></canvas>
+      <div style="margin-top:8px;font-family:var(--mono);font-size:11px;line-height:1.7">
+        ${periodo ? `<div style="color:${colPeriodo};font-weight:500">${v.entPeriodo.toLocaleString('es-ES')} uds. en período (${pctPeriodo}%)</div>` : ''}
+        ${v.entOtros > 0 ? `<div style="color:${colOtros}">${v.entOtros.toLocaleString('es-ES')} uds. otros períodos (${pctOtros}%)</div>` : ''}
+        <div style="color:${colPend}">${v.pendiente.toLocaleString('es-ES')} pendiente (${pctPend}%)</div>
+        ${v.precio ? `<div style="color:var(--text3);margin-top:2px">${v.precio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</div>` : ''}
       </div>
     </div>`;
   });
@@ -1250,10 +1273,9 @@ function renderAnaliticaCliente() {
   html += `</div>`;
   wrap.innerHTML = html;
 
-  // Dibujar tartas
+  // Dibujar tartas con 3 sectores
   setTimeout(() => {
     mats.forEach(([mat, v], idx) => {
-      const pend = v.pedido - v.entregado;
       const canvasId = `pie-cli-${idx}`;
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
@@ -1261,10 +1283,13 @@ function renderAnaliticaCliente() {
       const W = canvas.width, H = canvas.height;
       const cx = W/2, cy = H/2, r = Math.min(cx, cy) - 6;
       ctx.clearRect(0, 0, W, H);
+
       const datos = [
-        { valor: v.entregado, color: '#2a5c45' },
-        { valor: pend > 0 ? pend : 0, color: '#e07b39' }
+        { valor: v.entPeriodo, color: colPeriodo, label: 'En período' },
+        { valor: v.entOtros,   color: colOtros,   label: 'Otros' },
+        { valor: v.pendiente,  color: colPend,     label: 'Pendiente' }
       ].filter(d => d.valor > 0);
+
       if (!datos.length) return;
       const total = datos.reduce((s, d) => s + d.valor, 0);
       let angle = -Math.PI / 2;
@@ -1279,13 +1304,12 @@ function renderAnaliticaCliente() {
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
         ctx.stroke();
-        // Porcentaje dentro si slice > 0.3rad
-        if (slice > 0.3) {
+        if (slice > 0.25) {
           const mid = angle + slice / 2;
           const lx = cx + (r * 0.65) * Math.cos(mid);
           const ly = cy + (r * 0.65) * Math.sin(mid);
           ctx.fillStyle = '#fff';
-          ctx.font = 'bold 13px sans-serif';
+          ctx.font = 'bold 12px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(Math.round(d.valor / total * 100) + '%', lx, ly);
