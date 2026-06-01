@@ -724,10 +724,15 @@ function renderEntregasView() {
     const accId = 'acc-' + p.rowIndex;
     const importePedido = p.cantPedida * p.precio;
     const importeEntregado = p.cantEntregada * p.precio;
-    const bgPedido = pi % 2 === 0 ? 'var(--surface)' : '#eef6f2';
-    const bgHead = pi % 2 === 0 ? 'var(--surface2)' : '#ddeee6';
+    // Colores alternantes: beige/marfil para par, gris azulado para impar
+    const isEven = pi % 2 === 0;
+    const bgWrap   = isEven ? '#faf8f4' : '#f2f4f7';
+    const bgHead   = isEven ? '#ede8de' : '#dde3ec';
+    const bgStats  = isEven ? '#f4f0e8' : '#e8ecf2';
+    const bgAcc    = isEven ? '#faf8f4' : '#f2f4f7';
+    const borderC  = isEven ? '#c8b89a' : '#9aadc8';
 
-    html += `<div style="border-top:2px solid var(--accent);background:${bgPedido}">
+    html += `<div style="border:2px solid ${borderC};border-radius:10px;margin:12px 0;overflow:hidden;background:${bgWrap}">
       <div style="padding:10px 16px;background:${bgHead};display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <span class="pedido-num">${p.num}</span>
         <span style="font-family:var(--mono);font-size:13px;background:var(--accent-light);color:var(--accent-text);border:1px solid var(--accent);border-radius:var(--radius);padding:3px 10px;font-weight:600">${p.precio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</span>
@@ -741,13 +746,13 @@ function renderEntregasView() {
           </div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--border)">
-        <div class="stat-card" style="padding:10px 12px"><div class="stat-label">Cant. pedida</div><div class="stat-value" style="font-size:18px">${p.cantPedida}</div></div>
-        <div class="stat-card" style="padding:10px 12px"><div class="stat-label">Importe pedido</div><div class="stat-value" style="font-size:18px">${importePedido.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
-        <div class="stat-card" style="padding:10px 12px"><div class="stat-label">Entregado</div><div class="stat-value green" style="font-size:18px">${p.cantEntregada}</div><div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:2px">${importeEntregado.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
-        <div class="stat-card" style="padding:10px 12px"><div class="stat-label">Pendiente</div><div class="stat-value amber" style="font-size:18px">${pend}</div></div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 16px;background:${bgStats};border-bottom:1px solid ${borderC}">
+        <div class="stat-card" style="padding:10px 12px;background:${bgWrap}"><div class="stat-label">Cant. pedida</div><div class="stat-value" style="font-size:18px">${p.cantPedida}</div></div>
+        <div class="stat-card" style="padding:10px 12px;background:${bgWrap}"><div class="stat-label">Importe pedido</div><div class="stat-value" style="font-size:18px">${importePedido.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div class="stat-card" style="padding:10px 12px;background:${bgWrap}"><div class="stat-label">Entregado</div><div class="stat-value green" style="font-size:18px">${p.cantEntregada}</div><div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:2px">${importeEntregado.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div class="stat-card" style="padding:10px 12px;background:${bgWrap}"><div class="stat-label">Pendiente</div><div class="stat-value amber" style="font-size:18px">${pend}</div></div>
       </div>
-      <button class="accordion-btn" onclick="toggleAcc('${accId}')">
+      <button class="accordion-btn" style="background:${bgAcc};border-top:1px solid ${borderC}" onclick="toggleAcc('${accId}')">
         📦 Entregas anteriores (${entsLinea.length})
         <span class="accordion-arrow" id="arrow-${accId}">▼</span>
       </button>
@@ -775,7 +780,7 @@ function renderEntregasView() {
           </td>
         </tr>`).join('')}</tbody></table>` : `<div style="padding:12px 16px;color:var(--text3);font-size:13px">Sin entregas registradas aún</div>`}
       </div>
-      <div class="entrega-registro">
+      <div class="entrega-registro" style="background:${bgStats};border-top:1px solid ${borderC}">
         <div class="field"><label>Fecha de entrega</label><input type="date" id="fecha-${p.rowIndex}" value="${today()}"></div>
         <div class="field"><label>Cantidad (máx. ${pend})</label><input type="number" id="cant-${p.rowIndex}" min="1" max="${pend}" step="1" placeholder="0"></div>
         <div class="field"><label>Observaciones</label><input type="text" id="obs-${p.rowIndex}" placeholder="Nota opcional..."></div>
