@@ -397,6 +397,26 @@ let pedidos = [];   // filas de Google Sheets: {rowIndex, mes, anyo, cliente, nu
 let entregas = [];  // filas de Google Sheets
 let matLineCount = 0;
 
+// ── UTILS FECHA ──
+function parseFecha(val) {
+  if (!val) return '';
+  // Si ya es string con formato fecha, devolverlo tal cual
+  if (typeof val === 'string' && val.match(/^\d{4}-\d{2}-\d{2}/)) return val.slice(0,10);
+  if (typeof val === 'string' && val.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+    const [d,m,y] = val.split('/'); return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  // Si es número serial de Google Sheets (días desde 30/12/1899)
+  if (typeof val === 'number' || (typeof val === 'string' && !isNaN(val))) {
+    const serial = Number(val);
+    const date = new Date((serial - 25569) * 86400 * 1000);
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2,'0');
+    const d = String(date.getUTCDate()).padStart(2,'0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(val).slice(0,10);
+}
+
 function today() { return new Date().toISOString().slice(0, 10); }
 
 // ── HEADER ──
@@ -478,7 +498,7 @@ async function cargarDatos() {
     // Entregas
     entregas = rEntregas.data.slice(1).map((r, i) => ({
       rowIndex: i + 2,
-      fecha: String(r[0] || ''),
+      fecha: parseFecha(r[0]),
       num: String(r[1] || ''),
       mes: String(r[2] || ''),
       anyo: Number(r[3]) || 0,
