@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gestión de Pedidos — COMREC</title>
+<title>Gestión de Pedidos — COMREC v2</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -342,9 +342,10 @@ function today() { return new Date().toISOString().slice(0, 10); }
 document.getElementById('header-date').textContent = new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
 // ── API CALL ──
+let _cbCounter = 0;
 async function apiCall(params) {
   return new Promise((resolve, reject) => {
-    const cbName = 'cb' + Date.now();
+    const cbName = 'cb_' + (++_cbCounter) + '_' + Date.now();
     const url = new URL(API);
     Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, v));
     url.searchParams.append('callback', cbName);
@@ -354,6 +355,7 @@ async function apiCall(params) {
     window[cbName] = function(data) {
       if (done) return;
       done = true;
+      clearTimeout(timer);
       const s = document.getElementById(cbName);
       if (s && s.parentNode) s.parentNode.removeChild(s);
       resolve(data);
@@ -362,7 +364,6 @@ async function apiCall(params) {
     const timer = setTimeout(() => {
       if (done) return;
       done = true;
-      // NO borrar window[cbName] aquí — puede llegar tarde
       const s = document.getElementById(cbName);
       if (s && s.parentNode) s.parentNode.removeChild(s);
       reject(new Error('Timeout'));
@@ -389,11 +390,10 @@ async function cargarDatos() {
   setStatus('loading', '⟳ Cargando...');
   showLoading(true);
   try {
-    const [rListas, rPedidos, rEntregas] = await Promise.all([
-      apiCall({ action: 'read', sheet: 'Listas' }),
-      apiCall({ action: 'read', sheet: 'Pedidos' }),
-      apiCall({ action: 'read', sheet: 'Entregas' })
-    ]);
+    // Llamadas secuenciales para evitar conflictos de callbacks
+    const rListas = await apiCall({ action: 'read', sheet: 'Listas' });
+    const rPedidos = await apiCall({ action: 'read', sheet: 'Pedidos' });
+    const rEntregas = await apiCall({ action: 'read', sheet: 'Entregas' });
 
     // Listas (col1=Clientes, col2=Materiales, col3=Años)
     const lRows = rListas.data.slice(1);
