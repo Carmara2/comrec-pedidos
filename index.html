@@ -243,22 +243,13 @@ tbody tr:hover td { background: var(--bg); }
       <div id="msg-e-err" class="alert alert-err"></div>
       <div class="card">
         <div class="sec-label">Filtro</div>
-        <div class="g4">
-          <div class="field"><label>Mes</label>
-            <select id="e-mes" onchange="filtrarClientes()">
-              <option value="">— Mes —</option>
-              <option>Enero</option><option>Febrero</option><option>Marzo</option><option>Abril</option>
-              <option>Mayo</option><option>Junio</option><option>Julio</option><option>Agosto</option>
-              <option>Septiembre</option><option>Octubre</option><option>Noviembre</option><option>Diciembre</option>
-            </select>
-          </div>
-          <div class="field"><label>Año</label><select id="e-anyo" onchange="filtrarClientes()"></select></div>
+        <div class="g2">
           <div class="field"><label>Cliente</label><select id="e-cliente" onchange="filtrarMateriales()"><option value="">— Cliente —</option></select></div>
           <div class="field"><label>Material</label><select id="e-material" onchange="renderEntregasView()"><option value="">— Material —</option></select></div>
         </div>
       </div>
       <div id="entregas-view">
-        <div class="placeholder-box"><span class="placeholder-icon">🔍</span>Selecciona mes, año, cliente y material para ver los pedidos pendientes</div>
+        <div class="placeholder-box"><span class="placeholder-icon">🔍</span>Selecciona cliente y material para ver los pedidos pendientes</div>
       </div>
     </div>
 
@@ -560,10 +551,12 @@ function fillSelect(id, items, empty) {
 function populateSelects() {
   fillSelect('p-anyo', listas.anyos, '— Año —');
   fillSelect('p-cliente', listas.clientes, '— Cliente —');
-  populateEntregaAnyo();
+  // Poblar clientes en entregas con los que tienen pedidos pendientes
+  const clientesPendientes = [...new Set(pedidos.filter(p => p.cantEntregada < p.cantPedida).map(p => p.cliente))].sort((a,b) => a.localeCompare(b,'es'));
+  fillSelect('e-cliente', clientesPendientes, '— Cliente —');
 }
 function populateEntregaAnyo() {
-  fillSelect('e-anyo', listas.anyos, '— Año —');
+  // Ya no se usa mes/año en entregas — función vacía por compatibilidad
 }
 
 // ── MAT LINES ──
@@ -657,45 +650,38 @@ function renderPedidos() {
 }
 
 // ── FILTROS ENTREGAS ──
-function filtrarClientes() {
-  const mes = document.getElementById('e-mes').value;
-  const anyo = document.getElementById('e-anyo').value;
-  const activos = pedidos.filter(p => p.mes === mes && String(p.anyo) === String(anyo) && p.cantEntregada < p.cantPedida);
-  const clientes = [...new Set(activos.map(p => p.cliente))];
-  fillSelect('e-cliente', clientes, '— Cliente —');
-  document.getElementById('e-material').innerHTML = '<option value="">— Material —</option>';
-  renderEntregasView();
-}
 function filtrarMateriales() {
-  const mes = document.getElementById('e-mes').value;
-  const anyo = document.getElementById('e-anyo').value;
   const cliente = document.getElementById('e-cliente').value;
-  const activos = pedidos.filter(p => p.mes === mes && String(p.anyo) === String(anyo) && p.cliente === cliente && p.cantEntregada < p.cantPedida);
-  const mats = [...new Set(activos.map(p => p.material))];
+  if (!cliente) {
+    document.getElementById('e-material').innerHTML = '<option value="">— Material —</option>';
+    renderEntregasView();
+    return;
+  }
+  // Todos los pedidos pendientes de ese cliente (sin filtro de mes/año)
+  const activos = pedidos.filter(p => p.cliente === cliente && p.cantEntregada < p.cantPedida);
+  const mats = [...new Set(activos.map(p => p.material))].sort((a,b) => a.localeCompare(b,'es'));
   fillSelect('e-material', mats, '— Material —');
   renderEntregasView();
 }
 
 // ── VISTA ENTREGAS ──
 function renderEntregasView() {
-  const mes = document.getElementById('e-mes').value;
-  const anyo = document.getElementById('e-anyo').value;
   const cliente = document.getElementById('e-cliente').value;
   const material = document.getElementById('e-material').value;
   const view = document.getElementById('entregas-view');
 
-  if (!mes || !anyo || !cliente || !material) {
-    view.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">🔍</span>Selecciona mes, año, cliente y material para ver los pedidos pendientes</div>`;
+  if (!cliente || !material) {
+    view.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">🔍</span>Selecciona cliente y material para ver los pedidos pendientes</div>`;
     return;
   }
 
+  // Todos los pedidos pendientes de ese cliente y material (sin filtro de mes/año)
   const peds = pedidos.filter(p =>
-    p.mes === mes && String(p.anyo) === String(anyo) &&
     p.cliente === cliente && p.material === material && p.cantEntregada < p.cantPedida
   );
 
   if (!peds.length) {
-    view.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">✅</span>No hay pedidos pendientes para esta combinación</div>`;
+    view.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">✅</span>No hay pedidos pendientes para ${cliente} · ${material}</div>`;
     return;
   }
 
@@ -724,18 +710,16 @@ function renderEntregasView() {
     const accId = 'acc-' + p.rowIndex;
     const importePedido = p.cantPedida * p.precio;
     const importeEntregado = p.cantEntregada * p.precio;
-    // Colores alternantes: beige/marfil para par, gris azulado para impar
+    // Esquema de color por pedido: beige para par, verde menta para impar
     const isEven = pi % 2 === 0;
-    const bgWrap   = isEven ? '#faf8f4' : '#f2f4f7';
-    const bgHead   = isEven ? '#ede8de' : '#dde3ec';
-    const bgStats  = isEven ? '#f4f0e8' : '#e8ecf2';
-    const bgAcc    = isEven ? '#faf8f4' : '#f2f4f7';
-    const borderC  = isEven ? '#c8b89a' : '#9aadc8';
+    const bg      = isEven ? '#fdf6e3' : '#e8f5f0';
+    const border  = isEven ? '#d4a853' : '#4a9e7e';
+    const bgHead  = isEven ? '#f5e6b8' : '#c8e8da';
 
-    html += `<div style="border:2px solid ${borderC};border-radius:10px;margin:12px 0;overflow:hidden;background:${bgWrap}">
+    html += `<div style="border:2px solid ${border};border-radius:12px;margin:14px 0;overflow:hidden;background:${bg}">
       <div style="padding:10px 16px;background:${bgHead};display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <span class="pedido-num">${p.num}</span>
-        <span style="font-family:var(--mono);font-size:13px;background:var(--accent-light);color:var(--accent-text);border:1px solid var(--accent);border-radius:var(--radius);padding:3px 10px;font-weight:600">${p.precio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</span>
+        <span style="font-family:var(--mono);font-size:13px;background:white;color:var(--accent-text);border:1px solid ${border};border-radius:var(--radius);padding:3px 10px;font-weight:600">${p.precio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/ud</span>
         <div style="display:flex;gap:16px;margin-left:auto;flex-wrap:wrap">
           <span class="pedido-stat">Pedido: <span>${p.cantPedida}</span></span>
           <span class="pedido-stat green">Entregado: <span>${p.cantEntregada}</span></span>
@@ -746,13 +730,13 @@ function renderEntregasView() {
           </div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 16px;background:${bgStats};border-bottom:1px solid ${borderC}">
-        <div class="stat-card" style="padding:10px 12px;background:${bgWrap}"><div class="stat-label">Cant. pedida</div><div class="stat-value" style="font-size:18px">${p.cantPedida}</div></div>
-        <div class="stat-card" style="padding:10px 12px;background:${bgWrap}"><div class="stat-label">Importe pedido</div><div class="stat-value" style="font-size:18px">${importePedido.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
-        <div class="stat-card" style="padding:10px 12px;background:${bgWrap}"><div class="stat-label">Entregado</div><div class="stat-value green" style="font-size:18px">${p.cantEntregada}</div><div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:2px">${importeEntregado.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
-        <div class="stat-card" style="padding:10px 12px;background:${bgWrap}"><div class="stat-label">Pendiente</div><div class="stat-value amber" style="font-size:18px">${pend}</div></div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 16px;background:${bg};border-bottom:1px solid ${border}">
+        <div class="stat-card" style="padding:10px 12px;background:rgba(255,255,255,0.7)"><div class="stat-label">Cant. pedida</div><div class="stat-value" style="font-size:18px">${p.cantPedida}</div></div>
+        <div class="stat-card" style="padding:10px 12px;background:rgba(255,255,255,0.7)"><div class="stat-label">Importe pedido</div><div class="stat-value" style="font-size:18px">${importePedido.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div class="stat-card" style="padding:10px 12px;background:rgba(255,255,255,0.7)"><div class="stat-label">Entregado</div><div class="stat-value green" style="font-size:18px">${p.cantEntregada}</div><div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:2px">${importeEntregado.toLocaleString('es-ES',{minimumFractionDigits:2})} €</div></div>
+        <div class="stat-card" style="padding:10px 12px;background:rgba(255,255,255,0.7)"><div class="stat-label">Pendiente</div><div class="stat-value amber" style="font-size:18px">${pend}</div></div>
       </div>
-      <button class="accordion-btn" style="background:${bgAcc};border-top:1px solid ${borderC}" onclick="toggleAcc('${accId}')">
+      <button class="accordion-btn" style="background:${bgHead};border-top:1px solid ${border}" onclick="toggleAcc('${accId}')">
         📦 Entregas anteriores (${entsLinea.length})
         <span class="accordion-arrow" id="arrow-${accId}">▼</span>
       </button>
@@ -764,11 +748,11 @@ function renderEntregasView() {
           <td style="text-align:right;font-family:var(--mono);font-weight:500">${e.cantidad}</td>
           <td style="color:var(--text2)">${e.obs || '—'}</td>
           <td style="text-align:center;white-space:nowrap">
-            <button class="btn-sm" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="mostrarEdicionInline(${e.rowIndex},${p.rowIndex},'${e.fecha}',${e.cantidad},'${(e.obs||'').replace(/'/g,'\\\'')}')">✏️ Editar</button>
+            <button class="btn-sm" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="mostrarEdicionInline(${e.rowIndex},${p.rowIndex},'${e.fecha}',${e.cantidad},'${(e.obs||'').replace(/'/g,"\\'")}')">✏️ Editar</button>
             <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="eliminarEntrega(${e.rowIndex},${p.rowIndex},${e.cantidad})">🗑 Eliminar</button>
           </td>
         </tr>
-        <tr id="ent-edit-${e.rowIndex}" style="display:none;background:var(--accent-light)">
+        <tr id="ent-edit-${e.rowIndex}" style="display:none;background:rgba(255,255,255,0.8)">
           <td colspan="4" style="padding:10px 14px">
             <div style="display:grid;grid-template-columns:150px 110px 1fr auto auto;gap:8px;align-items:end">
               <div class="field"><label>Fecha</label><input type="date" id="edit-fecha-${e.rowIndex}" value="${e.fecha}"></div>
@@ -780,7 +764,7 @@ function renderEntregasView() {
           </td>
         </tr>`).join('')}</tbody></table>` : `<div style="padding:12px 16px;color:var(--text3);font-size:13px">Sin entregas registradas aún</div>`}
       </div>
-      <div class="entrega-registro" style="background:${bgStats};border-top:1px solid ${borderC}">
+      <div class="entrega-registro" style="background:${bg};border-top:1px solid ${border}">
         <div class="field"><label>Fecha de entrega</label><input type="date" id="fecha-${p.rowIndex}" value="${today()}"></div>
         <div class="field"><label>Cantidad (máx. ${pend})</label><input type="number" id="cant-${p.rowIndex}" min="1" max="${pend}" step="1" placeholder="0"></div>
         <div class="field"><label>Observaciones</label><input type="text" id="obs-${p.rowIndex}" placeholder="Nota opcional..."></div>
@@ -791,7 +775,7 @@ function renderEntregasView() {
     </div>`;
   });
 
-  html += '</div>';
+    html += '</div>';
   view.innerHTML = html;
 }
 
@@ -811,13 +795,12 @@ async function registrarEntrega(rowIndex, num, mes, anyo, cliente, material, pen
     await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: rowIndex, col: 8, value: nuevaEntregada });
     showMsg(msgOk, `✓ Entrega registrada: ${cantidad} uds. de ${material} en ${num}.`);
     await cargarDatos();
-    document.getElementById('e-mes').value = mes;
-    document.getElementById('e-anyo').value = anyo;
-    filtrarClientes();
+    // Restaurar filtros (solo cliente y material)
+    document.getElementById('e-cliente').value = cliente;
+    filtrarMateriales();
     setTimeout(() => {
-      document.getElementById('e-cliente').value = cliente;
-      filtrarMateriales();
-      setTimeout(() => { document.getElementById('e-material').value = material; renderEntregasView(); }, 100);
+      document.getElementById('e-material').value = material;
+      renderEntregasView();
     }, 100);
   } catch(e) { showMsg(msgErr, 'Error al guardar la entrega.'); }
   showLoading(false);
@@ -1061,12 +1044,20 @@ function initAnalitica() {
   selCli.innerHTML = '<option value="">— Selecciona cliente —</option>' +
     listas.clientes.map(c => `<option value="${c}">${c}</option>`).join('');
 
-  // Poblar períodos únicos (Mes Año) de entregas
-  const periodos = [...new Set(entregas.map(e => `${e.mes} ${e.anyo}`))].sort();
+  // Períodos únicos basados en la fecha REAL de entrega (YYYY-MM → Mes Año)
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const periodos = [...new Set(entregas.map(e => {
+    if (!e.fecha) return null;
+    const [y, m] = e.fecha.split('-');
+    return `${y}-${m.padStart(2,'0')}`;
+  }).filter(Boolean))].sort().map(ym => {
+    const [y, m] = ym.split('-');
+    return { val: ym, label: `${meses[parseInt(m)-1]} ${y}` };
+  });
   ['a-material-periodo', 'a-cliente-periodo'].forEach(id => {
     const sel = document.getElementById(id);
     sel.innerHTML = '<option value="">Todos los períodos</option>' +
-      periodos.map(p => `<option value="${p}">${p}</option>`).join('');
+      periodos.map(p => `<option value="${p.val}">${p.label}</option>`).join('');
   });
 
   if (prevMat) { selMat.value = prevMat; renderAnaliticaMaterial(); }
@@ -1121,12 +1112,21 @@ function renderAnaliticaMaterial() {
   const wrap = document.getElementById('resultado-material');
   if (!mat) { wrap.innerHTML = ''; return; }
 
-  // Filtrar entregas por material y período
+  // Filtrar entregas por material y período (fecha real de entrega)
   let ents = entregas.filter(e => e.material === mat);
-  if (periodo) ents = ents.filter(e => `${e.mes} ${e.anyo}` === periodo);
+  if (periodo) ents = ents.filter(e => {
+    if (!e.fecha) return false;
+    const [y, m] = e.fecha.split('-');
+    return `${y}-${m.padStart(2,'0')}` === periodo;
+  });
+  const periodoLabel = periodo ? (() => {
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const [y, m] = periodo.split('-');
+    return `${meses[parseInt(m)-1]} ${y}`;
+  })() : '';
 
   if (!ents.length) {
-    wrap.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay entregas registradas para ${mat}${periodo ? ' en ' + periodo : ''}</div>`;
+    wrap.innerHTML = `<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay entregas registradas para ${mat}${periodoLabel ? ' en ' + periodoLabel : ''}</div>`;
     return;
   }
 
@@ -1181,9 +1181,13 @@ function renderAnaliticaCliente() {
   const wrap = document.getElementById('resultado-cliente');
   if (!cli) { wrap.innerHTML = ''; return; }
 
-  // Filtrar entregas por cliente y período
+  // Filtrar entregas por cliente y período (fecha real de entrega)
   let ents = entregas.filter(e => e.cliente === cli);
-  if (periodo) ents = ents.filter(e => `${e.mes} ${e.anyo}` === periodo);
+  if (periodo) ents = ents.filter(e => {
+    if (!e.fecha) return false;
+    const [y, m] = e.fecha.split('-');
+    return `${y}-${m.padStart(2,'0')}` === periodo;
+  });
 
   // Pedidos activos del cliente
   const pedsCliente = pedidos.filter(p => p.cliente === cli);
