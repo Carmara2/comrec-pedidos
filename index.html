@@ -932,8 +932,8 @@ function renderAnaliticaMaterial(){
       <div class="stat-card"><div class="stat-label">Total pedido activo</div><div class="stat-value">${totalActivoPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
       <div class="stat-card" style="border-color:#9aadc8;background:#f2f4f7">
         <div class="stat-label">Pedidos finalizados${periodo?' en '+ymToLabel(periodo):''}</div>
-        <div class="stat-value" style="font-size:18px">${pedsFinPeriodo.length} pedido${pedsFinPeriodo.length!==1?'s':''}</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:4px">${totalFinPeriodoEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn entregadas</div>
+        <div class="stat-value">${totalFinPeriodoEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:4px">${pedsFinPeriodo.length} pedido${pedsFinPeriodo.length!==1?'s':''}</div>
       </div>
       <div class="stat-card"><div class="stat-label">Total entregado${periodo?' ('+ymToLabel(periodo)+')':''}</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
       <div class="stat-card"><div class="stat-label">Pendiente (pedidos activos)</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
