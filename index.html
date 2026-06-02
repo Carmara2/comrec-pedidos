@@ -375,14 +375,12 @@ function goTab(name) {
   const names=['pedidos','entregas','historial-entregas','historial-pedidos','analitica','listas'];
   document.querySelectorAll('.nav-btn')[names.indexOf(name)].classList.add('active');
   document.getElementById('panel-'+name).classList.add('active');
-  // Recargar datos frescos de Google Sheets en cada cambio de pestaña
-  cargarDatos().then(() => {
-    if(name==='entregas') renderEntregasView();
-    if(name==='historial-entregas') renderHistorialEntregas();
-    if(name==='historial-pedidos') renderHistorialPedidos();
-    if(name==='analitica') initAnalitica();
-    if(name==='listas') renderTags();
-  });
+  if(name==='pedidos') renderPedidos();
+  if(name==='entregas') { populateSelects(); renderEntregasView(); }
+  if(name==='historial-entregas') renderHistorialEntregas();
+  if(name==='historial-pedidos') renderHistorialPedidos();
+  if(name==='analitica') initAnalitica();
+  if(name==='listas') renderTags();
 }
 
 // ── SELECTS ──
