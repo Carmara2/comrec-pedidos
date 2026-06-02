@@ -616,6 +616,18 @@ function mostrarEdicionInline(entRowIndex){
   if(row) row.style.display='table-row';
 }
 function cancelarEdicion(entRowIndex){ const r=document.getElementById('ent-edit-'+entRowIndex); if(r)r.style.display='none'; }
+// ── REACTIVAR PEDIDO SI LA EDICIÓN LO REQUIERE ──
+async function reactivarSiNecesario(pedRowIndex, nuevaEntregada) {
+  const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
+  if (!pedido) return;
+  // Si el pedido NO está activo y la nueva cantidad entregada ya no alcanza el umbral de completado
+  if (!pedido.activo && Math.abs(nuevaEntregada - pedido.cantPedida) > TOLERANCIA_TN && nuevaEntregada < pedido.cantPedida) {
+    // Reactivar: Activo = TRUE, Fecha_Fin = vacío
+    await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: true });
+    await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 9, value: '' });
+  }
+}
+
 async function guardarEdicionInline(entRowIndex,pedRowIndex,cantAnterior){
   const nuevaFecha=document.getElementById('edit-fecha-'+entRowIndex).value;
   const nuevaCant=parseFloat(document.getElementById('edit-cant-'+entRowIndex).value)||0;
@@ -629,7 +641,9 @@ async function guardarEdicionInline(entRowIndex,pedRowIndex,cantAnterior){
     await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:1,value:nuevaFecha});
     await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:7,value:nuevaCant});
     await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:8,value:nuevaObs});
-    if(pedido&&diff!==0) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:Math.max(0,pedido.cantEntregada+diff)});
+    const nuevaEntregadaEdit = Math.max(0,(pedido?.cantEntregada||0)+diff);
+    if(pedido&&diff!==0) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaEdit});
+    await reactivarSiNecesario(pedRowIndex,nuevaEntregadaEdit);
     showMsg(msgOk,'✓ Entrega actualizada.');
     await cargarDatos(); renderEntregasView();
   } catch(e){showMsg(msgErr,'Error al guardar.');}
@@ -642,7 +656,9 @@ async function eliminarEntrega(entRowIndex,pedRowIndex,cantAnterior){
   showLoading(true);
   try {
     await apiCall({action:'deleteRow',sheet:'Entregas',row:entRowIndex});
-    if(pedido) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:Math.max(0,pedido.cantEntregada-cantAnterior)});
+    const nuevaEntregadaDel = Math.max(0,(pedido?.cantEntregada||0)-cantAnterior);
+    if(pedido) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaDel});
+    await reactivarSiNecesario(pedRowIndex,nuevaEntregadaDel);
     showMsg(msgOk,'✓ Entrega eliminada.');
     await cargarDatos(); renderEntregasView();
   } catch(e){showMsg(msgErr,'Error al eliminar.');}
@@ -704,7 +720,9 @@ async function guardarEdicionHistorial(entRowIndex,pedRowIndex,cantAnterior){
     await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:1,value:nf});
     await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:7,value:nc});
     await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:8,value:no});
-    if(pedido&&diff!==0) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:Math.max(0,pedido.cantEntregada+diff)});
+    const nuevaEntregadaHEdit = Math.max(0,(pedido?.cantEntregada||0)+diff);
+    if(pedido&&diff!==0) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaHEdit});
+    await reactivarSiNecesario(pedRowIndex,nuevaEntregadaHEdit);
     await cargarDatos(); renderHistorialEntregas();
   } catch(e){alert('Error al guardar.');}
   showLoading(false);
@@ -715,7 +733,9 @@ async function eliminarEntregaHistorial(entRowIndex,pedRowIndex,cantAnterior){
   showLoading(true);
   try {
     await apiCall({action:'deleteRow',sheet:'Entregas',row:entRowIndex});
-    if(pedido) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:Math.max(0,pedido.cantEntregada-cantAnterior)});
+    const nuevaEntregadaHDel = Math.max(0,(pedido?.cantEntregada||0)-cantAnterior);
+    if(pedido) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaHDel});
+    await reactivarSiNecesario(pedRowIndex,nuevaEntregadaHDel);
     await cargarDatos(); renderHistorialEntregas();
   } catch(e){alert('Error al eliminar.');}
   showLoading(false);
