@@ -842,6 +842,15 @@ function renderAnaliticaMaterial(){
   let entsPeriodo=periodo?entsAll.filter(e=>fechaToYM(e.fecha)===periodo):entsAll;
 
   // Total pedido = pedidos activos + entregas de pedidos ya NO activos en el período
+  // Pedidos NO activos cuya Fecha_Fin cae en el período seleccionado
+  const pedsFinPeriodo = pedsInactivos.filter(p => {
+    if (!p.fechaFin) return false;
+    if (!periodo) return true; // sin filtro de período mostramos todos
+    return fechaToYM(p.fechaFin) === periodo;
+  });
+  const totalFinPeriodoPedido = pedsFinPeriodo.reduce((s,p) => s + p.cantPedida, 0);
+  const totalFinPeriodoEntregado = pedsFinPeriodo.reduce((s,p) => s + p.cantEntregada, 0);
+
   const totalActivoPedido=pedsActivos.reduce((s,p)=>s+p.cantPedida,0);
   const totalInactivoEntregado=periodo
     ? pedsInactivos.reduce((s,p)=>s+entregas.filter(e=>e.num===p.num&&e.material===p.material&&fechaToYM(e.fecha)===periodo).reduce((ss,e)=>ss+e.cantidad,0),0)
@@ -873,8 +882,13 @@ function renderAnaliticaMaterial(){
   const datosPend=clientes.map(([cli,v],i)=>({label:cli,valor:Math.max(0,v.pedido-v.entregado),color:COLORS[i%COLORS.length]})).filter(d=>d.valor>0);
 
   wrap.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px">
       <div class="stat-card"><div class="stat-label">Total pedido activo</div><div class="stat-value">${totalActivoPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+      <div class="stat-card" style="border-color:#9aadc8;background:#f2f4f7">
+        <div class="stat-label">Pedidos finalizados${periodo?' en '+ymToLabel(periodo):''}</div>
+        <div class="stat-value" style="font-size:18px">${pedsFinPeriodo.length} pedido${pedsFinPeriodo.length!==1?'s':''}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:4px">${totalFinPeriodoEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn entregadas</div>
+      </div>
       <div class="stat-card"><div class="stat-label">Total entregado${periodo?' ('+ymToLabel(periodo)+')':''}</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
       <div class="stat-card"><div class="stat-label">Pendiente (pedidos activos)</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
       <div class="stat-card"><div class="stat-label">Precio medio ponderado</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/Tn</div></div>
