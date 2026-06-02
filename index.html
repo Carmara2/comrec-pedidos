@@ -616,15 +616,25 @@ function mostrarEdicionInline(entRowIndex){
   if(row) row.style.display='table-row';
 }
 function cancelarEdicion(entRowIndex){ const r=document.getElementById('ent-edit-'+entRowIndex); if(r)r.style.display='none'; }
+// ── CALCULAR ENTREGADO REAL DESDE ENTREGAS LOCALES ──
+function calcularEntregadoReal(num, material) {
+  return entregas
+    .filter(e => e.num === num && e.material === material)
+    .reduce((s, e) => s + e.cantidad, 0);
+}
+
 // ── REACTIVAR PEDIDO SI LA EDICIÓN LO REQUIERE ──
 async function reactivarSiNecesario(pedRowIndex, nuevaEntregada) {
   const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
   if (!pedido) return;
-  // Si el pedido NO está activo y la nueva cantidad entregada ya no alcanza el umbral de completado
-  if (!pedido.activo && Math.abs(nuevaEntregada - pedido.cantPedida) > TOLERANCIA_TN && nuevaEntregada < pedido.cantPedida) {
-    // Reactivar: Activo = TRUE, Fecha_Fin = vacío
-    await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: true });
-    await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 9, value: '' });
+  // Si el pedido está inactivo Y la nueva cantidad entregada ya no completa el pedido
+  if (!pedido.activo) {
+    const yaNoCompleto = nuevaEntregada < pedido.cantPedida - TOLERANCIA_TN;
+    if (yaNoCompleto) {
+      // Reactivar directamente en Google Sheets: col 8 = Activo, col 9 = Fecha_Fin
+      await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: true });
+      await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 9, value: '' });
+    }
   }
 }
 
@@ -643,6 +653,8 @@ async function guardarEdicionInline(entRowIndex,pedRowIndex,cantAnterior){
     await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:8,value:nuevaObs});
     const nuevaEntregadaEdit = Math.max(0,(pedido?.cantEntregada||0)+diff);
     if(pedido&&diff!==0) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaEdit});
+    // Actualizar entrega local para que reactivarSiNecesario use el valor correcto
+    if(pedido) pedido.cantEntregada = nuevaEntregadaEdit;
     await reactivarSiNecesario(pedRowIndex,nuevaEntregadaEdit);
     showMsg(msgOk,'✓ Entrega actualizada.');
     await cargarDatos(); renderEntregasView();
@@ -658,6 +670,7 @@ async function eliminarEntrega(entRowIndex,pedRowIndex,cantAnterior){
     await apiCall({action:'deleteRow',sheet:'Entregas',row:entRowIndex});
     const nuevaEntregadaDel = Math.max(0,(pedido?.cantEntregada||0)-cantAnterior);
     if(pedido) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaDel});
+    if(pedido) pedido.cantEntregada = nuevaEntregadaDel;
     await reactivarSiNecesario(pedRowIndex,nuevaEntregadaDel);
     showMsg(msgOk,'✓ Entrega eliminada.');
     await cargarDatos(); renderEntregasView();
@@ -722,6 +735,7 @@ async function guardarEdicionHistorial(entRowIndex,pedRowIndex,cantAnterior){
     await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:8,value:no});
     const nuevaEntregadaHEdit = Math.max(0,(pedido?.cantEntregada||0)+diff);
     if(pedido&&diff!==0) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaHEdit});
+    if(pedido) pedido.cantEntregada = nuevaEntregadaHEdit;
     await reactivarSiNecesario(pedRowIndex,nuevaEntregadaHEdit);
     await cargarDatos(); renderHistorialEntregas();
   } catch(e){alert('Error al guardar.');}
@@ -735,6 +749,7 @@ async function eliminarEntregaHistorial(entRowIndex,pedRowIndex,cantAnterior){
     await apiCall({action:'deleteRow',sheet:'Entregas',row:entRowIndex});
     const nuevaEntregadaHDel = Math.max(0,(pedido?.cantEntregada||0)-cantAnterior);
     if(pedido) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaHDel});
+    if(pedido) pedido.cantEntregada = nuevaEntregadaHDel;
     await reactivarSiNecesario(pedRowIndex,nuevaEntregadaHDel);
     await cargarDatos(); renderHistorialEntregas();
   } catch(e){alert('Error al eliminar.');}
