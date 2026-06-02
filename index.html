@@ -260,7 +260,7 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg)
 </div>
 <footer class="footer">COMREC Comercial de Reciclajes · Sincronizado con Google Sheets</footer>
 <script>
-const API = 'https://script.google.com/macros/s/AKfycbwAsc8OR-5FM26Bs1Sm_Pj21eHGXTsaEo0sGb9Xcb7loINPb3q3x8Y2pmUqyvLlQAgM3g/exec';
+const API = 'https://script.google.com/macros/s/AKfycbzbktMOaPTJy--Q77UD9dskRv8A1WvzoJSd3NdJkURKwWMIM77FdVxqoywy62-LzWAP/exec';
 const COLORS = ['#2a5c45','#e07b39','#3b82f6','#a855f7','#ec4899','#14b8a6','#f59e0b','#ef4444','#6366f1','#84cc16'];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const TOLERANCIA_TN = 10; // +-10 Tn para completar pedido
@@ -275,9 +275,20 @@ function today() { const d=new Date(); return `${d.getFullYear()}-${String(d.get
 function parseFecha(val) {
   if (!val||val==='') return '';
   const s=String(val).trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-  if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) { const p=s.split(' ')[0].split('/'); return `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`; }
-  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0,10);
+  // YYYY-MM-DD sin timezone — devolver directo
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // ISO con timezone UTC (ej: 2026-05-31T22:00:00.000Z) — convertir a hora España
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const utc = new Date(s);
+    const partes = utc.toLocaleDateString('es-ES', {timeZone:'Europe/Madrid',year:'numeric',month:'2-digit',day:'2-digit'}).split('/');
+    if (partes.length===3) return partes[2]+'-'+partes[1]+'-'+partes[0];
+    return s.slice(0,10);
+  }
+  // DD/MM/YYYY (formato español)
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) {
+    const p=s.split(' ')[0].split('/');
+    return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+  }
   return s.slice(0,10);
 }
 function fechaToYM(f) { if(!f) return ''; const [y,m]=f.split('-'); return `${y}-${m.padStart(2,'0')}`; }
