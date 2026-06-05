@@ -318,9 +318,12 @@ async function apiCall(params) {
 async function cargarDatos() {
   setStatus('loading','⟳ Cargando...'); showLoading(true);
   try {
-    const rListas=await apiCall({action:'read',sheet:'Listas'});
-    const rPedidos=await apiCall({action:'read',sheet:'Pedidos'});
-    const rEntregas=await apiCall({action:'read',sheet:'Entregas'});
+    // Cargar las 3 hojas en paralelo en lugar de secuencial
+    const [rListas, rPedidos, rEntregas] = await Promise.all([
+      apiCall({action:'read',sheet:'Listas'}),
+      apiCall({action:'read',sheet:'Pedidos'}),
+      apiCall({action:'read',sheet:'Entregas'})
+    ]);
 
     // Listas: col A=Clientes, col B=Materiales, una entrada por fila, texto puro
     const lRows=rListas.data.slice(1);
@@ -661,12 +664,14 @@ async function guardarEdicionInline(entRowIndex,pedRowIndex,cantAnterior){
   const pedido=pedidos.find(p=>p.rowIndex===pedRowIndex);
   showLoading(true);
   try {
-    await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:1,value:nuevaFecha});
-    await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:7,value:nuevaCant});
-    await apiCall({action:'updateCell',sheet:'Entregas',row:entRowIndex,col:8,value:nuevaObs});
+    const updates1 = [
+      {sheet:'Entregas',row:entRowIndex,col:1,value:nuevaFecha},
+      {sheet:'Entregas',row:entRowIndex,col:7,value:nuevaCant},
+      {sheet:'Entregas',row:entRowIndex,col:8,value:nuevaObs}
+    ];
     const nuevaEntregadaEdit = Math.max(0,(pedido?.cantEntregada||0)+diff);
-    if(pedido&&diff!==0) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaEdit});
-    // Actualizar entrega local para que reactivarSiNecesario use el valor correcto
+    if(pedido&&diff!==0) updates1.push({sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaEdit});
+    await apiCall({action:'batchUpdate',updates:JSON.stringify(updates1)});
     if(pedido) pedido.cantEntregada = nuevaEntregadaEdit;
     await reactivarSiNecesario(pedRowIndex,nuevaEntregadaEdit);
     showMsg(msgOk,'✓ Entrega actualizada.');
