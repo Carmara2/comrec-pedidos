@@ -260,7 +260,7 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg)
 </div>
 <footer class="footer">COMREC Comercial de Reciclajes · Sincronizado con Google Sheets</footer>
 <script>
-const API = 'https://script.google.com/macros/s/AKfycbzbktMOaPTJy--Q77UD9dskRv8A1WvzoJSd3NdJkURKwWMIM77FdVxqoywy62-LzWAP/exec';
+const API = 'https://script.google.com/macros/s/AKfycbwCUQpOWsP1b5d6YHNlAdAYfLP1zfuRlwIkfVoQVCAHB-KGMrPNYJ8lha-SAly0rN60GQ/exec';
 const COLORS = ['#2a5c45','#e07b39','#3b82f6','#a855f7','#ec4899','#14b8a6','#f59e0b','#ef4444','#6366f1','#84cc16'];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const TOLERANCIA_TN = 10; // +-10 Tn para completar pedido
@@ -324,8 +324,9 @@ async function cargarDatos() {
 
     // Listas: col A=Clientes, col B=Materiales, una entrada por fila, texto puro
     const lRows=rListas.data.slice(1);
-    listas.clientes=lRows.map(r=>String(r[0]||'').trim()).filter(v=>v!=='').sort((a,b)=>a.localeCompare(b,'es'));
-    listas.materiales=lRows.map(r=>String(r[1]||'').trim()).filter(v=>v!=='').sort((a,b)=>a.localeCompare(b,'es'));
+    const limpio = v => { const s=String(v||'').trim(); return s!==''&&s!=='1970-01-01'&&!/^\d{4}-\d{2}-\d{2}$/.test(s)&&!/^\d{4}$/.test(s); };
+    listas.clientes=lRows.map(r=>String(r[0]||'').trim()).filter(limpio).sort((a,b)=>a.localeCompare(b,'es'));
+    listas.materiales=lRows.map(r=>String(r[1]||'').trim()).filter(limpio).sort((a,b)=>a.localeCompare(b,'es'));
 
     // Pedidos: A=FechaCreacion B=Cliente C=Num_Pedido D=Material E=Precio F=Cant_Pedida G=Cant_Entregada H=Activo I=Fecha_Fin
     pedidos=rPedidos.data.slice(1).map((r,i)=>({
