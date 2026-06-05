@@ -322,11 +322,10 @@ async function cargarDatos() {
     const rPedidos=await apiCall({action:'read',sheet:'Pedidos'});
     const rEntregas=await apiCall({action:'read',sheet:'Entregas'});
 
-    // Listas: col1=Clientes, col2=Materiales — ignorar col3 (Años) y filtrar fechas mal convertidas
+    // Listas: col A=Clientes, col B=Materiales, una entrada por fila, texto puro
     const lRows=rListas.data.slice(1);
-    const esValido = v => v!==''&&v!=null&&String(v).trim()!==''&&!/^\d{4}-\d{2}-\d{2}/.test(String(v));
-    listas.clientes=lRows.map(r=>r[0]).filter(esValido).map(String).sort((a,b)=>a.localeCompare(b,'es'));
-    listas.materiales=lRows.map(r=>r[1]).filter(esValido).map(String).sort((a,b)=>a.localeCompare(b,'es'));
+    listas.clientes=lRows.map(r=>String(r[0]||'').trim()).filter(v=>v!=='').sort((a,b)=>a.localeCompare(b,'es'));
+    listas.materiales=lRows.map(r=>String(r[1]||'').trim()).filter(v=>v!=='').sort((a,b)=>a.localeCompare(b,'es'));
 
     // Pedidos: A=FechaCreacion B=Cliente C=Num_Pedido D=Material E=Precio F=Cant_Pedida G=Cant_Entregada H=Activo I=Fecha_Fin
     pedidos=rPedidos.data.slice(1).map((r,i)=>({
