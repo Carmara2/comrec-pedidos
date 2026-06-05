@@ -146,7 +146,7 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg)
         <div class="card-header">
           <span class="sec-label" style="margin:0">Pedidos activos</span>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-export" onclick="cargarDatos()">↺ Actualizar</button>
+            <button class="btn btn-export" onclick="renderPedidos()">↺ Actualizar</button>
             <button class="btn btn-export" onclick="exportCSV('pedidos')">⬇ CSV</button>
           </div>
         </div>
@@ -182,7 +182,7 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg)
         <div class="card-header">
           <span class="sec-label" style="margin:0">Todas las entregas</span>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-export" onclick="cargarDatos()">↺ Actualizar</button>
+            <button class="btn btn-export" onclick="renderHistorialEntregas()">↺ Actualizar</button>
             <button class="btn btn-export" onclick="exportCSV('entregas')">⬇ CSV</button>
           </div>
         </div>
@@ -196,7 +196,7 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg)
       <div class="card card-noPad">
         <div class="card-header">
           <span class="sec-label" style="margin:0">Pedidos no activos</span>
-          <button class="btn btn-export" onclick="cargarDatos()">↺ Actualizar</button>
+          <button class="btn btn-export" onclick="renderHistorialPedidos()">↺ Actualizar</button>
         </div>
         <div id="tabla-historial-pedidos"></div>
       </div>
@@ -322,10 +322,11 @@ async function cargarDatos() {
     const rPedidos=await apiCall({action:'read',sheet:'Pedidos'});
     const rEntregas=await apiCall({action:'read',sheet:'Entregas'});
 
-    // Listas: col1=Clientes, col2=Materiales
+    // Listas: col1=Clientes, col2=Materiales — ignorar col3 (Años) y filtrar fechas mal convertidas
     const lRows=rListas.data.slice(1);
-    listas.clientes=lRows.map(r=>r[0]).filter(v=>v!==''&&v!=null).map(String).sort((a,b)=>a.localeCompare(b,'es'));
-    listas.materiales=lRows.map(r=>r[1]).filter(v=>v!==''&&v!=null).map(String).sort((a,b)=>a.localeCompare(b,'es'));
+    const esValido = v => v!==''&&v!=null&&String(v).trim()!==''&&!/^\d{4}-\d{2}-\d{2}/.test(String(v));
+    listas.clientes=lRows.map(r=>r[0]).filter(esValido).map(String).sort((a,b)=>a.localeCompare(b,'es'));
+    listas.materiales=lRows.map(r=>r[1]).filter(esValido).map(String).sort((a,b)=>a.localeCompare(b,'es'));
 
     // Pedidos: A=FechaCreacion B=Cliente C=Num_Pedido D=Material E=Precio F=Cant_Pedida G=Cant_Entregada H=Activo I=Fecha_Fin
     pedidos=rPedidos.data.slice(1).map((r,i)=>({
