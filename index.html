@@ -324,7 +324,7 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg)
 const API = 'https://script.google.com/macros/s/AKfycbychsuYkkQbAEVteX5QKxCZY28vdRXbHigluvp5c97N1RNe_Cg_fWDTKWX1iqyRAze5Vw/exec';
 const COLORS = ['#2a5c45','#e07b39','#3b82f6','#a855f7','#ec4899','#14b8a6','#f59e0b','#ef4444','#6366f1','#84cc16'];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-const TOLERANCIA_TN = 10; // +-10 Tn para completar pedido
+const TOLERANCIA_PCT = 0.10; // +-10% de la cantidad pedida para completar pedido
 
 let listas = { clientes:[], materiales:[] };
 let pedidos = []; // {rowIndex, fechaCreacion, cliente, num, material, precio, cantPedida, cantEntregada, activo, fechaFin}
@@ -452,7 +452,7 @@ function goTab(name) {
 function fillSelect(id,items,empty){ const s=document.getElementById(id); const prev=s.value; s.innerHTML=`<option value="">${empty}</option>`+items.map(v=>`<option value="${v}">${v}</option>`).join(''); if(prev)s.value=prev; }
 function populateSelects(){
   fillSelect('p-cliente',listas.clientes,'— Cliente —');
-  const clientesActivos=[...new Set(pedidos.filter(p=>p.activo&&p.cantEntregada<p.cantPedida+TOLERANCIA_TN).map(p=>p.cliente))].sort((a,b)=>a.localeCompare(b,'es'));
+  const clientesActivos=[...new Set(pedidos.filter(p=>p.activo&&p.cantEntregada<p.cantPedida*(1+TOLERANCIA_PCT)).map(p=>p.cliente))].sort((a,b)=>a.localeCompare(b,'es'));
   fillSelect('e-cliente',clientesActivos,'— Cliente —');
   fillSelect('a-material',listas.materiales,'— Material —');
   fillSelect('a-cliente',listas.clientes,'— Cliente —');
@@ -702,7 +702,7 @@ async function guardarEntregaExcel() {
 
   const p = xlsxPedidoEncontrado;
   const pend = p.cantPedida - p.cantEntregada;
-  if (cantidad > pend + TOLERANCIA_TN) { showMsg(msgErr, `La cantidad (${cantidad} Tn) supera el máximo permitido (${(pend + TOLERANCIA_TN).toFixed(1)} Tn).`); return; }
+  if (cantidad > pend + p.cantPedida * TOLERANCIA_PCT) { showMsg(msgErr, `La cantidad (${cantidad} Tn) supera el máximo permitido (${(pend + p.cantPedida * TOLERANCIA_PCT).toFixed(1)} Tn).`); return; }
 
   const [fy, fm] = fecha.split('-');
   const mesReal = MESES[parseInt(fm) - 1];
@@ -715,7 +715,9 @@ async function guardarEntregaExcel() {
     await apiCall({ action: 'appendRow', sheet: 'Entregas', row: JSON.stringify([fecha, p.num, mesReal, anyoReal, p.cliente, p.material, cantidad, obsFinal]) });
     await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: p.rowIndex, col: 7, value: nuevaEntregada });
 
-    if (Math.abs(nuevaEntregada - p.cantPedida) <= TOLERANCIA_TN || nuevaEntregada >= p.cantPedida) {
+    // Comprobar si el pedido se completa (±10% de la cantidad pedida)
+    const tolerancia = p.cantPedida * 0.10;
+    if (Math.abs(nuevaEntregada - p.cantPedida) <= tolerancia || nuevaEntregada >= p.cantPedida) {
       await apiCall({ action: 'desactivarPedido', row: p.rowIndex });
       showMsg(msgOk, `✓ Entrega importada y pedido ${p.num} completado automáticamente.`);
     } else {
@@ -740,7 +742,7 @@ function cancelarExcel() {
 function filtrarMateriales(){
   const cliente=document.getElementById('e-cliente').value;
   if(!cliente){document.getElementById('e-material').innerHTML='<option value="">— Material —</option>';renderEntregasView();return;}
-  const mats=[...new Set(pedidos.filter(p=>p.activo&&p.cliente===cliente&&p.cantEntregada<p.cantPedida+TOLERANCIA_TN).map(p=>p.material))].sort((a,b)=>a.localeCompare(b,'es'));
+  const mats=[...new Set(pedidos.filter(p=>p.activo&&p.cliente===cliente&&p.cantEntregada<p.cantPedida*(1+TOLERANCIA_PCT)).map(p=>p.material))].sort((a,b)=>a.localeCompare(b,'es'));
   fillSelect('e-material',mats,'— Material —');
   renderEntregasView();
 }
@@ -751,7 +753,7 @@ function renderEntregasView(){
   const material=document.getElementById('e-material').value;
   const view=document.getElementById('entregas-view');
   if(!cliente||!material){view.innerHTML=`<div class="placeholder-box"><span class="placeholder-icon">🔍</span>Selecciona cliente y material para ver los pedidos activos pendientes</div>`;return;}
-  const peds=pedidos.filter(p=>p.activo&&p.cliente===cliente&&p.material===material&&p.cantEntregada<p.cantPedida+TOLERANCIA_TN);
+  const peds=pedidos.filter(p=>p.activo&&p.cliente===cliente&&p.material===material&&p.cantEntregada<p.cantPedida*(1+TOLERANCIA_PCT));
   if(!peds.length){view.innerHTML=`<div class="placeholder-box"><span class="placeholder-icon">✅</span>No hay pedidos activos pendientes para ${cliente} · ${material}</div>`;return;}
 
   const totalPed=peds.reduce((s,p)=>s+p.cantPedida,0);
@@ -823,7 +825,7 @@ function renderEntregasView(){
       </div>
       <div class="entrega-registro" style="background:${bg};border-top:1px solid ${border}">
         <div class="field"><label>Fecha de entrega</label><input type="date" id="fecha-${p.rowIndex}" value="${today()}"></div>
-        <div class="field"><label>Cantidad (Tn, máx. ${pend.toFixed(1)})</label><input type="number" id="cant-${p.rowIndex}" min="0.1" max="${pend+TOLERANCIA_TN}" step="0.1" placeholder="0.0"></div>
+        <div class="field"><label>Cantidad (Tn, máx. ${pend.toFixed(1)})</label><input type="number" id="cant-${p.rowIndex}" min="0.1" max="${pend+p.cantPedida*TOLERANCIA_PCT}" step="0.1" placeholder="0.0"></div>
         <div class="field"><label>Observaciones</label><input type="text" id="obs-${p.rowIndex}" placeholder="Nota opcional..."></div>
         <div class="field"><label style="opacity:0">_</label>
           <button class="btn btn-success" onclick="registrarEntrega(${p.rowIndex},'${p.num}','${p.cliente}','${p.material}',${pend})">✓ Registrar</button>
@@ -842,7 +844,7 @@ async function registrarEntrega(rowIndex,num,cliente,material,pend){
   const obs=document.getElementById('obs-'+rowIndex).value.trim();
   const msgOk=document.getElementById('msg-e-ok'),msgErr=document.getElementById('msg-e-err');
   if(!fecha||!cantidad){showMsg(msgErr,'Indica fecha y cantidad.');return;}
-  if(cantidad>pend+TOLERANCIA_TN){showMsg(msgErr,`La cantidad supera el máximo permitido (${(pend+TOLERANCIA_TN).toFixed(1)} Tn).`);return;}
+  if(cantidad>pend+pedido.cantPedida*TOLERANCIA_PCT){showMsg(msgErr,`La cantidad supera el máximo permitido (${(pend+pedido.cantPedida*TOLERANCIA_PCT).toFixed(1)} Tn).`);return;}
 
   const MESES_N=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const [fy,fm]=fecha.split('-');
@@ -857,7 +859,7 @@ async function registrarEntrega(rowIndex,num,cliente,material,pend){
     await apiCall({action:'updateCell',sheet:'Pedidos',row:rowIndex,col:7,value:nuevaEntregada});
 
     // Comprobar si el pedido se completa (+-10 Tn)
-    if(Math.abs(nuevaEntregada-pedido.cantPedida)<=TOLERANCIA_TN||nuevaEntregada>=pedido.cantPedida){
+    if(Math.abs(nuevaEntregada-pedido.cantPedida)<=pedido.cantPedida*TOLERANCIA_PCT||nuevaEntregada>=pedido.cantPedida){
       await apiCall({action:'desactivarPedido',row:rowIndex});
       showMsg(msgOk,`✓ Entrega registrada. ¡Pedido ${num} completado y cerrado automáticamente!`);
     } else {
@@ -891,7 +893,7 @@ async function reactivarSiNecesario(pedRowIndex, nuevaEntregada) {
   if (!pedido) return;
   // Si el pedido está inactivo Y la nueva cantidad entregada ya no completa el pedido
   if (!pedido.activo) {
-    const yaNoCompleto = nuevaEntregada < pedido.cantPedida - TOLERANCIA_TN;
+    const yaNoCompleto = nuevaEntregada < pedido.cantPedida * (1 - TOLERANCIA_PCT);
     if (yaNoCompleto) {
       // Reactivar directamente en Google Sheets: col 8 = Activo, col 9 = Fecha_Fin
       await apiCall({ action: 'updateCell', sheet: 'Pedidos', row: pedRowIndex, col: 8, value: true });
