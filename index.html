@@ -421,6 +421,19 @@ async function cargarDatos() {
 
     document.getElementById('hbadge').textContent=entregas.length;
     setStatus('ok','✓ Conectado');
+
+    // Auto-detectar pedidos que están completados pero siguen activos
+    const pedidosADesactivar = pedidos.filter(p =>
+      p.activo && (p.cantEntregada >= p.cantPedida ||
+      Math.abs(p.cantEntregada - p.cantPedida) <= p.cantPedida * TOLERANCIA_PCT)
+    );
+    if (pedidosADesactivar.length > 0) {
+      for (const p of pedidosADesactivar) {
+        await apiCall({ action: 'desactivarPedido', row: p.rowIndex });
+        p.activo = false;
+        p.fechaFin = today();
+      }
+    }
     populateSelects();
     renderPedidos();
     renderTags();
@@ -887,6 +900,19 @@ function calcularEntregadoReal(num, material) {
     .reduce((s, e) => s + e.cantidad, 0);
 }
 
+// ── COMPLETAR PEDIDO SI LA EDICIÓN LO REQUIERE ──
+async function completarSiNecesario(pedRowIndex, nuevaEntregada) {
+  const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
+  if (!pedido || !pedido.activo) return;
+  const completo = nuevaEntregada >= pedido.cantPedida ||
+    Math.abs(nuevaEntregada - pedido.cantPedida) <= pedido.cantPedida * TOLERANCIA_PCT;
+  if (completo) {
+    await apiCall({ action: 'desactivarPedido', row: pedRowIndex });
+    pedido.activo = false;
+    pedido.fechaFin = today();
+  }
+}
+
 // ── REACTIVAR PEDIDO SI LA EDICIÓN LO REQUIERE ──
 async function reactivarSiNecesario(pedRowIndex, nuevaEntregada) {
   const pedido = pedidos.find(p => p.rowIndex === pedRowIndex);
@@ -922,6 +948,7 @@ async function guardarEdicionInline(entRowIndex,pedRowIndex,cantAnterior){
     await apiCall({action:'batchUpdate',updates:JSON.stringify(updates1)});
     if(pedido) pedido.cantEntregada = nuevaEntregadaEdit;
     await reactivarSiNecesario(pedRowIndex,nuevaEntregadaEdit);
+    await completarSiNecesario(pedRowIndex,nuevaEntregadaEdit);
     showMsg(msgOk,'✓ Entrega actualizada.');
     await cargarDatos(); renderEntregasView();
   } catch(e){showMsg(msgErr,'Error al guardar.');}
@@ -1003,6 +1030,7 @@ async function guardarEdicionHistorial(entRowIndex,pedRowIndex,cantAnterior){
     if(pedido&&diff!==0) await apiCall({action:'updateCell',sheet:'Pedidos',row:pedRowIndex,col:7,value:nuevaEntregadaHEdit});
     if(pedido) pedido.cantEntregada = nuevaEntregadaHEdit;
     await reactivarSiNecesario(pedRowIndex,nuevaEntregadaHEdit);
+    await completarSiNecesario(pedRowIndex,nuevaEntregadaHEdit);
     await cargarDatos(); renderHistorialEntregas();
   } catch(e){alert('Error al guardar.');}
   showLoading(false);
