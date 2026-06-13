@@ -270,24 +270,41 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg)
         <button class="btn btn-primary" id="btn-vista-material" onclick="setVistaAnalitica('material')">📦 Por material</button>
         <button class="btn btn-secondary" id="btn-vista-cliente" onclick="setVistaAnalitica('cliente')">🏢 Por cliente</button>
       </div>
+
+      <!-- VISTA MATERIAL -->
       <div id="vista-material">
-        <div class="card">
-          <div class="sec-label">Selecciona un material</div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="sec-label">Filtro</div>
           <div class="g2">
-            <div class="field"><label>Material</label><select id="a-material" onchange="renderAnaliticaMaterial()"><option value="">— Material —</option></select></div>
+            <div class="field"><label>Material (opcional)</label><select id="a-material" onchange="renderAnaliticaMaterial()"><option value="">Todos los materiales</option></select></div>
             <div class="field"><label>Período de entrega</label><select id="a-material-periodo" onchange="renderAnaliticaMaterial()"><option value="">Todos los períodos</option></select></div>
           </div>
         </div>
-        <div id="resultado-material"></div>
+        <!-- Detalle material seleccionado (aparece ANTES de las gráficas globales) -->
+        <div id="detalle-material"></div>
+        <!-- Gráfico general siempre visible -->
+        <div id="resumen-material" style="display:grid;grid-template-columns:1fr 360px;gap:20px;margin-bottom:20px;align-items:start">
+          <div class="card" style="padding:20px">
+            <div class="sec-label" style="margin-bottom:16px">Total entregado por material (Tn)</div>
+            <div style="position:relative;height:320px"><canvas id="bar-materiales"></canvas></div>
+          </div>
+          <div class="card" style="padding:20px">
+            <div class="sec-label" style="margin-bottom:12px">Precio medio ponderado</div>
+            <div id="tabla-precios-medios"></div>
+          </div>
+        </div>
       </div>
+
+      <!-- VISTA CLIENTE -->
       <div id="vista-cliente" style="display:none">
-        <div class="card">
-          <div class="sec-label">Selecciona un cliente</div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="sec-label">Filtro</div>
           <div class="g2">
-            <div class="field"><label>Cliente</label><select id="a-cliente" onchange="renderAnaliticaCliente()"><option value="">— Cliente —</option></select></div>
+            <div class="field"><label>Cliente (opcional)</label><select id="a-cliente" onchange="renderAnaliticaCliente()"><option value="">Todos los clientes</option></select></div>
             <div class="field"><label>Período de entrega</label><select id="a-cliente-periodo" onchange="renderAnaliticaCliente()"><option value="">Todos los períodos</option></select></div>
           </div>
         </div>
+        <div id="detalle-cliente"></div>
         <div id="resultado-cliente"></div>
       </div>
     </div>
@@ -1114,118 +1131,137 @@ async function removeLista(key,col,val){
 }
 
 // ── ANALÍTICA ──
-let vistaAnalitica='material';
+
 function setVistaAnalitica(v){
-  vistaAnalitica=v;
-  document.getElementById('vista-material').style.display=v==='material'?'block':'none';
-  document.getElementById('vista-cliente').style.display=v==='cliente'?'block':'none';
-  document.getElementById('btn-vista-material').className='btn '+(v==='material'?'btn-primary':'btn-secondary');
-  document.getElementById('btn-vista-cliente').className='btn '+(v==='cliente'?'btn-primary':'btn-secondary');
+  ['material','cliente'].forEach(id=>{
+    document.getElementById('vista-'+id).style.display = v===id?'block':'none';
+    document.getElementById('btn-vista-'+id).className = 'btn '+(v===id?'btn-primary':'btn-secondary');
+  });
+  if(v==='material') { renderResumenMaterial(); renderAnaliticaMaterial(); }
+  if(v==='cliente') renderAnaliticaCliente();
 }
+
 function initAnalitica(){
-  fillSelect('a-material',listas.materiales,'— Material —');
-  fillSelect('a-cliente',listas.clientes,'— Cliente —');
+  fillSelect('a-material', listas.materiales, 'Todos los materiales');
+  fillSelect('a-cliente', listas.clientes, 'Todos los clientes');
   const periodos=[...new Set(entregas.map(e=>fechaToYM(e.fecha)).filter(Boolean))].sort();
   ['a-material-periodo','a-cliente-periodo'].forEach(id=>{
-    const sel=document.getElementById(id); const prev=sel.value;
+    const sel=document.getElementById(id); if(!sel) return;
+    const prev=sel.value;
     sel.innerHTML='<option value="">Todos los períodos</option>'+periodos.map(ym=>`<option value="${ym}">${ymToLabel(ym)}</option>`).join('');
     if(prev) sel.value=prev;
   });
+  renderResumenMaterial();
+  renderAnaliticaMaterial();
 }
 
-function drawPieChart(canvasId,datos,base){
-  const canvas=document.getElementById(canvasId); if(!canvas) return;
-  const ctx=canvas.getContext('2d');
-  const W=canvas.width,H=canvas.height,cx=W/2,cy=H/2,r=Math.min(cx,cy)-10;
-  ctx.clearRect(0,0,W,H);
-  const total=datos.reduce((s,d)=>s+d.valor,0); if(!total) return;
-  const b=base||total;
-  let angle=-Math.PI/2;
-  datos.forEach((d,i)=>{
-    const slice=(d.valor/total)*2*Math.PI;
-    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,angle,angle+slice); ctx.closePath();
-    ctx.fillStyle=d.color||COLORS[i%COLORS.length]; ctx.fill();
-    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke();
-    if(slice>0.25){
-      const mid=angle+slice/2;
-      ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(Math.round(d.valor/b*100)+'%',cx+(r*.65)*Math.cos(mid),cy+(r*.65)*Math.sin(mid));
-    }
-    angle+=slice;
+// ── RESUMEN GENERAL: barras por material + tabla precios ──
+function renderResumenMaterial(){
+  const periodo = document.getElementById('a-material-periodo')?.value || '';
+  const porMat = {};
+  entregas.filter(e=>periodo?fechaToYM(e.fecha)===periodo:true).forEach(e=>{
+    if(!e.material) return;
+    if(!porMat[e.material]) porMat[e.material]={total:0,imp:0,cant:0};
+    porMat[e.material].total+=e.cantidad;
+    const ped=pedidos.find(p=>p.num===e.num&&p.material===e.material);
+    if(ped&&ped.precio){porMat[e.material].imp+=e.cantidad*ped.precio;porMat[e.material].cant+=e.cantidad;}
   });
+  const mats=Object.entries(porMat).sort((a,b)=>b[1].total-a[1].total);
+  if(!mats.length) return;
+
+  // Tabla precios
+  const tabla=document.getElementById('tabla-precios-medios');
+  if(tabla) tabla.innerHTML=`<table><thead><tr><th>Material</th><th style="text-align:right">Total (Tn)</th><th style="text-align:right">Precio medio</th></tr></thead>
+  <tbody>${mats.map(([mat,v],i)=>{
+    const pm=v.cant>0?v.imp/v.cant:0;
+    return `<tr>
+      <td style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${COLORS[i%COLORS.length]};flex-shrink:0"></span><span style="font-size:12px">${mat}</span></td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px">${v.total.toLocaleString('es-ES',{maximumFractionDigits:1})}</td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600">${pm>0?pm.toLocaleString('es-ES',{minimumFractionDigits:2})+' €/Tn':'—'}</td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+
+  // Gráfico barras
+  setTimeout(()=>{
+    const canvas=document.getElementById('bar-materiales'); if(!canvas) return;
+    const ctx=canvas.getContext('2d');
+    const W=canvas.parentElement.offsetWidth||600, H=320;
+    canvas.width=W; canvas.height=H;
+    const padL=55,padR=20,padT=24,padB=90;
+    const cW=W-padL-padR, cH=H-padT-padB;
+    const vals=mats.map(([,v])=>v.total);
+    const maxVal=Math.max(...vals)*1.12||1;
+    const barW=Math.min(55,(cW/mats.length)*0.55);
+    const gap=cW/mats.length;
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+    for(let i=0;i<=5;i++){
+      const y=padT+cH-(i/5)*cH;
+      ctx.strokeStyle='#e0ddd8';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(padL+cW,y);ctx.stroke();
+      ctx.fillStyle='#9e9b94';ctx.font='11px sans-serif';ctx.textAlign='right';
+      ctx.fillText(Math.round((i/5)*maxVal).toLocaleString('es-ES'),padL-4,y+4);
+    }
+    mats.forEach(([mat,v],i)=>{
+      const x=padL+i*gap+gap/2-barW/2;
+      const bH=(v.total/maxVal)*cH;
+      const y=padT+cH-bH;
+      ctx.fillStyle=COLORS[i%COLORS.length];
+      if(ctx.roundRect) ctx.roundRect(x,y,barW,bH,4); else ctx.rect(x,y,barW,bH);
+      ctx.fill();
+      ctx.fillStyle='#1a1916';ctx.font='bold 11px sans-serif';ctx.textAlign='center';
+      ctx.fillText(v.total.toLocaleString('es-ES',{maximumFractionDigits:1}),x+barW/2,y-5);
+      ctx.save();ctx.translate(x+barW/2,padT+cH+10);ctx.rotate(-Math.PI/4);
+      ctx.textAlign='right';ctx.fillStyle='#6b6860';ctx.font='10px sans-serif';
+      ctx.fillText(mat.length>22?mat.slice(0,20)+'…':mat,0,0);ctx.restore();
+    });
+  },50);
 }
 
+// ── DETALLE MATERIAL SELECCIONADO ──
 function renderAnaliticaMaterial(){
   const mat=document.getElementById('a-material').value;
   const periodo=document.getElementById('a-material-periodo').value;
-  const wrap=document.getElementById('resultado-material');
+  const wrap=document.getElementById('detalle-material');
+  renderResumenMaterial();
   if(!mat){wrap.innerHTML='';return;}
 
-  // Pedidos activos del material
-  const pedsActivos=pedidos.filter(p=>p.activo&&p.material===mat);
-  // Pedidos NO activos del material (para totalizar entregas realizadas)
-  const pedsInactivos=pedidos.filter(p=>!p.activo&&p.material===mat);
-
-  // Entregas filtradas por período (fecha real de entrega)
-  let entsAll=entregas.filter(e=>e.material===mat);
-  let entsPeriodo=periodo?entsAll.filter(e=>fechaToYM(e.fecha)===periodo):entsAll;
-
-  // Total pedido = pedidos activos + entregas de pedidos ya NO activos en el período
-  // Pedidos NO activos cuya Fecha_Fin cae en el período seleccionado
-  const pedsFinPeriodo = pedsInactivos.filter(p => {
-    if (!p.fechaFin) return false;
-    if (!periodo) return true; // sin filtro de período mostramos todos
-    return fechaToYM(p.fechaFin) === periodo;
-  });
-  const totalFinPeriodoPedido = pedsFinPeriodo.reduce((s,p) => s + p.cantPedida, 0);
-  const totalFinPeriodoEntregado = pedsFinPeriodo.reduce((s,p) => s + p.cantEntregada, 0);
-
-  const totalActivoPedido=pedsActivos.reduce((s,p)=>s+p.cantPedida,0);
-  const totalInactivoEntregado=periodo
-    ? pedsInactivos.reduce((s,p)=>s+entregas.filter(e=>e.num===p.num&&e.material===p.material&&fechaToYM(e.fecha)===periodo).reduce((ss,e)=>ss+e.cantidad,0),0)
-    : pedsInactivos.reduce((s,p)=>s+p.cantEntregada,0);
-
-  const totalPedido=totalActivoPedido+totalInactivoEntregado; // base para comparar
-  const totalEntregado=entsPeriodo.reduce((s,e)=>s+e.cantidad,0);
-  const totalPendiente=pedsActivos.reduce((s,p)=>s+Math.max(0,p.cantPedida-p.cantEntregada),0);
-
-  // Precio medio ponderado
-  let tcant=0,timp=0;
-  entsPeriodo.forEach(e=>{const p=pedidos.find(pp=>pp.num===e.num&&pp.material===e.material);if(p&&p.precio){tcant+=e.cantidad;timp+=e.cantidad*p.precio;}});
-  const precioMedio=tcant>0?timp/tcant:0;
-
-  // Agrupar por cliente para las tartas
+  const MESES_IDX=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const periodoLabel=periodo?(()=>{const[y,m]=periodo.split('-');return`${MESES_IDX[parseInt(m)-1]} ${y}`;})():'';
+  let pedsMat=pedidos.filter(p=>p.material===mat);
+  if(periodo) pedsMat=pedsMat.filter(p=>{const ym=`${p.anyo}-${String(MESES_IDX.indexOf(p.mes)+1).padStart(2,'0')}`;return ym===periodo;});
+  if(!pedsMat.length){wrap.innerHTML=`<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel?' en '+periodoLabel:''}</div>`;return;}
   const porCliente={};
-  pedsActivos.forEach(p=>{
+  pedsMat.forEach(p=>{
     if(!porCliente[p.cliente])porCliente[p.cliente]={pedido:0,entregado:0};
     porCliente[p.cliente].pedido+=p.cantPedida;
     porCliente[p.cliente].entregado+=p.cantEntregada;
   });
   const clientes=Object.entries(porCliente).sort((a,b)=>b[1].pedido-a[1].pedido);
-  const totalPedidoActivo=clientes.reduce((s,[,v])=>s+v.pedido,0);
-
+  const totalPedido=clientes.reduce((s,[,v])=>s+v.pedido,0);
+  const totalEntregado=clientes.reduce((s,[,v])=>s+v.entregado,0);
+  const totalPendiente=totalPedido-totalEntregado;
+  let ents=entregas.filter(e=>e.material===mat);
+  if(periodo) ents=ents.filter(e=>{const[y,m]=e.fecha.split('-');return`${y}-${m.padStart(2,'0')}`===periodo;});
+  let tcant=0,timp=0;
+  ents.forEach(e=>{const p=pedidos.find(pp=>pp.num===e.num&&pp.material===e.material);if(p&&p.precio){tcant+=e.cantidad;timp+=e.cantidad*p.precio;}});
+  const precioMedio=tcant>0?timp/tcant:0;
   const datosEnt=[
     ...clientes.map(([cli,v],i)=>({label:cli,valor:v.entregado,color:COLORS[i%COLORS.length]})).filter(d=>d.valor>0),
     ...(totalPendiente>0?[{label:'Pendiente',valor:totalPendiente,color:'#d4cfc8'}]:[])
   ];
   const datosPend=clientes.map(([cli,v],i)=>({label:cli,valor:Math.max(0,v.pedido-v.entregado),color:COLORS[i%COLORS.length]})).filter(d=>d.valor>0);
-
   wrap.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px">
-      <div class="stat-card"><div class="stat-label">Total pedido activo</div><div class="stat-value">${totalActivoPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
-      <div class="stat-card" style="border-color:#9aadc8;background:#f2f4f7">
-        <div class="stat-label">Pedidos finalizados${periodo?' en '+ymToLabel(periodo):''}</div>
-        <div class="stat-value">${totalFinPeriodoEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:4px">${pedsFinPeriodo.length} pedido${pedsFinPeriodo.length!==1?'s':''}</div>
-      </div>
-      <div class="stat-card"><div class="stat-label">Total entregado${periodo?' ('+ymToLabel(periodo)+')':''}</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
-      <div class="stat-card"><div class="stat-label">Pendiente (pedidos activos)</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
-      <div class="stat-card"><div class="stat-label">Precio medio ponderado</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/Tn</div></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+      <div class="stat-card"><div class="stat-label">Total pedido activo</div><div class="stat-value">${totalPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+      <div class="stat-card"><div class="stat-label">Total entregado${periodoLabel?' ('+periodoLabel+')':''}</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+      <div class="stat-card"><div class="stat-label">Pendiente</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+      <div class="stat-card"><div class="stat-label">Precio medio</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/Tn</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
       <div class="card" style="padding:20px">
         <div class="sec-label">Entregado por cliente</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:14px">% sobre total pedido activo (${totalPedidoActivo.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn) · Gris = pendiente</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:14px">% sobre total pedido (${totalPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn) · Gris = pendiente</div>
         <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
           <canvas id="pie-mat-ent" width="200" height="200" style="flex-shrink:0"></canvas>
           <div style="flex:1;min-width:140px">
@@ -1233,13 +1269,13 @@ function renderAnaliticaMaterial(){
               <div style="width:11px;height:11px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
               <div style="flex:1;font-size:12px">${cli}</div>
               <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent)">${v.entregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div>
-              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPedidoActivo?Math.round(v.entregado/totalPedidoActivo*100):0}%</div>
+              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPedido?Math.round(v.entregado/totalPedido*100):0}%</div>
             </div>`).join('')}
             <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
               <div style="width:11px;height:11px;border-radius:50%;background:#d4cfc8;flex-shrink:0"></div>
               <div style="flex:1;font-size:12px;color:var(--text3)">Pendiente total</div>
               <div style="font-family:var(--mono);font-size:11px;color:var(--text3)">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div>
-              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPedidoActivo?Math.round(totalPendiente/totalPedidoActivo*100):0}%</div>
+              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPedido?Math.round(totalPendiente/totalPedido*100):0}%</div>
             </div>
           </div>
         </div>
@@ -1249,91 +1285,174 @@ function renderAnaliticaMaterial(){
         <div style="font-size:11px;color:var(--text3);margin-bottom:14px">% sobre total pendiente (${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn)</div>
         ${datosPend.length?`<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
           <canvas id="pie-mat-pend" width="200" height="200" style="flex-shrink:0"></canvas>
-          <div style="flex:1;min-width:140px">
-            ${clientes.filter(([,v])=>v.pedido-v.entregado>0).map(([cli,v],i)=>`<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
+          <div style="flex:1;min-width:140px">${clientes.filter(([,v])=>v.pedido-v.entregado>0).map(([cli,v],i)=>`<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
               <div style="width:11px;height:11px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
               <div style="flex:1;font-size:12px">${cli}</div>
               <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--warn)">${(v.pedido-v.entregado).toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div>
               <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPendiente?Math.round((v.pedido-v.entregado)/totalPendiente*100):0}%</div>
-            </div>`).join('')}
-          </div>
+            </div>`).join('')}</div>
         </div>`:`<div class="empty-state" style="padding:1rem">✅ Todo entregado</div>`}
       </div>
     </div>`;
   setTimeout(()=>{
-    if(datosEnt.length) drawPieChart('pie-mat-ent',datosEnt,totalPedidoActivo);
+    if(datosEnt.length) drawPieChart('pie-mat-ent',datosEnt,totalPedido);
     if(datosPend.length) drawPieChart('pie-mat-pend',datosPend,totalPendiente);
   },50);
 }
 
+// ── VISTA CLIENTE: barras apiladas ──
 function renderAnaliticaCliente(){
-  const cli=document.getElementById('a-cliente').value;
-  const periodo=document.getElementById('a-cliente-periodo').value;
-  const wrap=document.getElementById('resultado-cliente');
-  if(!cli){wrap.innerHTML='';return;}
+  const cli = document.getElementById('a-cliente').value;
+  const periodo = document.getElementById('a-cliente-periodo').value;
+  const wrapDetalle = document.getElementById('detalle-cliente');
+  const wrap = document.getElementById('resultado-cliente');
 
-  const pedsCliente=pedidos.filter(p=>p.cliente===cli);
-  if(!pedsCliente.length){wrap.innerHTML=`<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay datos para ${cli}</div>`;return;}
+  const matsAll=[...new Set(entregas.map(e=>e.material).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  const clientesAll=[...new Set(entregas.map(e=>e.cliente).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
 
-  const periodoLabel=periodo?ymToLabel(periodo):'';
-  const porMaterial={};
-  pedsCliente.forEach(p=>{
-    if(!porMaterial[p.material])porMaterial[p.material]={pedido:0,entPeriodo:0,entOtros:0,precio:p.precio,activo:p.activo};
-    porMaterial[p.material].pedido+=p.cantPedida;
-    if(!p.activo) porMaterial[p.material].activo=false;
+  const entsFiltradas = entregas.filter(e=>periodo?fechaToYM(e.fecha)===periodo:true);
+
+  // Agrupar por cliente → material
+  const porCliente={};
+  entsFiltradas.forEach(e=>{
+    if(!e.cliente||!e.material) return;
+    if(!porCliente[e.cliente])porCliente[e.cliente]={};
+    porCliente[e.cliente][e.material]=(porCliente[e.cliente][e.material]||0)+e.cantidad;
   });
 
-  const entsCli=entregas.filter(e=>e.cliente===cli);
-  Object.keys(porMaterial).forEach(mat=>{
-    entsCli.filter(e=>e.material===mat).forEach(e=>{
-      const ym=fechaToYM(e.fecha);
-      if(periodo&&ym===periodo) porMaterial[mat].entPeriodo+=e.cantidad;
-      else porMaterial[mat].entOtros+=e.cantidad;
+  const matsUsados=matsAll.filter(m=>clientesAll.some(c=>porCliente[c]?.[m]>0));
+  const clientesConDatos=clientesAll.filter(c=>matsUsados.some(m=>porCliente[c]?.[m]>0));
+
+  // Precio medio por material
+  const precioPorMat={};
+  matsUsados.forEach(mat=>{
+    let tc=0,ti=0;
+    entsFiltradas.filter(e=>e.material===mat).forEach(e=>{
+      const p=pedidos.find(pp=>pp.num===e.num&&pp.material===e.material);
+      if(p&&p.precio){tc+=e.cantidad;ti+=e.cantidad*p.precio;}
     });
-    porMaterial[mat].pendiente=Math.max(0,porMaterial[mat].pedido-porMaterial[mat].entPeriodo-porMaterial[mat].entOtros);
+    precioPorMat[mat]=tc>0?ti/tc:0;
   });
 
-  const mats=Object.entries(porMaterial).sort((a,b)=>a[0].localeCompare(b[0],'es'));
-  const colPeriodo='#2a5c45',colOtros='#5b9bd5',colPend='#e07b39';
+  // ── DETALLE cliente seleccionado (aparece ANTES de la gráfica global) ──
+  if(cli) {
+    const pedsCliente=pedidos.filter(p=>p.cliente===cli);
+    const porMaterial={};
+    pedsCliente.forEach(p=>{
+      if(!porMaterial[p.material])porMaterial[p.material]={pedido:0,entPeriodo:0,entOtros:0,precio:p.precio};
+      porMaterial[p.material].pedido+=p.cantPedida;
+    });
+    const entsCli=entregas.filter(e=>e.cliente===cli);
+    Object.keys(porMaterial).forEach(mat=>{
+      entsCli.filter(e=>e.material===mat).forEach(e=>{
+        const ym=fechaToYM(e.fecha);
+        if(periodo&&ym===periodo) porMaterial[mat].entPeriodo+=e.cantidad;
+        else porMaterial[mat].entOtros+=e.cantidad;
+      });
+      porMaterial[mat].pendiente=Math.max(0,porMaterial[mat].pedido-porMaterial[mat].entPeriodo-porMaterial[mat].entOtros);
+    });
+    const mats=Object.entries(porMaterial).sort((a,b)=>a[0].localeCompare(b[0],'es'));
+    const colPeriodo='#2a5c45',colOtros='#5b9bd5',colPend='#e07b39';
+    let detHtml=`<div class="card" style="padding:20px;margin-bottom:20px">
+      <div class="sec-label" style="margin-bottom:14px">Detalle — ${cli}${periodo?' · '+ymToLabel(periodo):''}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px">`;
+    mats.forEach(([mat,v],idx)=>{
+      const total=v.pedido;
+      const pctP=total?Math.round(v.entPeriodo/total*100):0;
+      const pctO=total?Math.round(v.entOtros/total*100):0;
+      const pctPend=total?Math.round(v.pendiente/total*100):0;
+      const cid='pie-clidet-'+idx;
+      detHtml+=`<div style="text-align:center">
+        <div style="font-weight:600;font-size:11px;margin-bottom:8px;min-height:28px;display:flex;align-items:center;justify-content:center">${mat}</div>
+        <canvas id="${cid}" width="160" height="160" style="max-width:100%"></canvas>
+        <div style="font-family:var(--mono);font-size:10px;line-height:1.7;margin-top:6px">
+          ${periodo?`<div style="color:${colPeriodo};font-weight:500">${v.entPeriodo.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn período (${pctP}%)</div>`:''}
+          ${v.entOtros>0?`<div style="color:${colOtros}">${v.entOtros.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn otros (${pctO}%)</div>`:''}
+          <div style="color:${colPend}">${v.pendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn pend. (${pctPend}%)</div>
+        </div>
+      </div>`;
+    });
+    detHtml+=`</div></div>`;
+    wrapDetalle.innerHTML=detHtml;
+    setTimeout(()=>{
+      mats.forEach(([,v],idx)=>{
+        const datos=[{valor:v.entPeriodo,color:'#2a5c45'},{valor:v.entOtros,color:'#5b9bd5'},{valor:v.pendiente,color:'#e07b39'}].filter(d=>d.valor>0);
+        drawPieChart('pie-clidet-'+idx,datos,v.pedido);
+      });
+    },50);
+  } else {
+    wrapDetalle.innerHTML='';
+  }
 
-  let html=`<div style="display:flex;gap:16px;margin-bottom:10px;font-size:12px;flex-wrap:wrap">
-    <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${colPeriodo}"></span>${periodo?'Entregado en '+periodoLabel:'Entregado'}</span>
-    ${periodo?`<span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${colOtros}"></span>Entregado otros períodos</span>`:''}
-    <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${colPend}"></span>Pendiente</span>
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px">`;
-
-  mats.forEach(([mat,v],idx)=>{
-    const total=v.pedido;
-    const pctP=total?Math.round(v.entPeriodo/total*100):0;
-    const pctO=total?Math.round(v.entOtros/total*100):0;
-    const pctPend=total?Math.round(v.pendiente/total*100):0;
-    const canvasId='pie-cli-'+idx;
-    const datos=[
-      {valor:v.entPeriodo,color:colPeriodo},{valor:v.entOtros,color:colOtros},{valor:v.pendiente,color:colPend}
-    ].filter(d=>d.valor>0);
-
-    html+=`<div class="card" style="padding:14px;text-align:center">
-      <div style="font-weight:600;font-size:12px;margin-bottom:10px;min-height:32px;display:flex;align-items:center;justify-content:center">${mat}</div>
-      <canvas id="${canvasId}" width="180" height="180" style="max-width:100%"></canvas>
-      <div style="margin-top:8px;font-family:var(--mono);font-size:11px;line-height:1.7">
-        ${periodo?`<div style="color:${colPeriodo};font-weight:500">${v.entPeriodo.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn período (${pctP}%)</div>`:''}
-        ${v.entOtros>0?`<div style="color:${colOtros}">${v.entOtros.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn otros (${pctO}%)</div>`:''}
-        <div style="color:${colPend}">${v.pendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn pendiente (${pctPend}%)</div>
-        ${v.precio?`<div style="color:var(--text3)">${v.precio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/Tn</div>`:''}
+  // ── GRÁFICA GLOBAL: barras apiladas ──
+  wrap.innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 360px;gap:20px;align-items:start">
+      <div class="card" style="padding:20px">
+        <div class="sec-label" style="margin-bottom:16px">Total entregado por cliente (Tn) — apilado por material</div>
+        <div style="position:relative;height:380px"><canvas id="bar-clientes"></canvas></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">
+          ${matsUsados.map((m,i)=>`<span style="display:flex;align-items:center;gap:4px;font-size:11px">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${COLORS[i%COLORS.length]}"></span>${m}
+          </span>`).join('')}
+        </div>
+      </div>
+      <div class="card" style="padding:20px">
+        <div class="sec-label" style="margin-bottom:12px">Precio medio ponderado por material</div>
+        <table><thead><tr><th>Material</th><th style="text-align:right">Total (Tn)</th><th style="text-align:right">Precio medio</th></tr></thead>
+        <tbody>${matsUsados.map((mat,i)=>{
+          const tot=clientesConDatos.reduce((s,c)=>s+(porCliente[c]?.[mat]||0),0);
+          return `<tr>
+            <td style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${COLORS[i%COLORS.length]};flex-shrink:0"></span><span style="font-size:12px">${mat}</span></td>
+            <td style="text-align:right;font-family:var(--mono);font-size:12px">${tot.toLocaleString('es-ES',{maximumFractionDigits:1})}</td>
+            <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600">${precioPorMat[mat]>0?precioPorMat[mat].toLocaleString('es-ES',{minimumFractionDigits:2})+' €/Tn':'—'}</td>
+          </tr>`;
+        }).join('')}</tbody></table>
       </div>
     </div>`;
-  });
-  html+='</div>';
-  wrap.innerHTML=html;
 
   setTimeout(()=>{
-    mats.forEach(([,v],idx)=>{
-      const datos=[{valor:v.entPeriodo,color:colPeriodo},{valor:v.entOtros,color:colOtros},{valor:v.pendiente,color:colPend}].filter(d=>d.valor>0);
-      drawPieChart('pie-cli-'+idx,datos,v.pedido);
+    const canvas=document.getElementById('bar-clientes'); if(!canvas) return;
+    const ctx=canvas.getContext('2d');
+    const W=canvas.parentElement.offsetWidth||700, H=380;
+    canvas.width=W; canvas.height=H;
+    const padL=55,padR=20,padT=24,padB=110;
+    const cW=W-padL-padR, cH=H-padT-padB;
+    const totales=clientesConDatos.map(c=>matsUsados.reduce((s,m)=>s+(porCliente[c]?.[m]||0),0));
+    const maxVal=Math.max(...totales)*1.12||1;
+    const barW=Math.min(50,(cW/Math.max(clientesConDatos.length,1))*0.55);
+    const gap=cW/Math.max(clientesConDatos.length,1);
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+    for(let i=0;i<=5;i++){
+      const y=padT+cH-(i/5)*cH;
+      ctx.strokeStyle='#e0ddd8';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(padL+cW,y);ctx.stroke();
+      ctx.fillStyle='#9e9b94';ctx.font='11px sans-serif';ctx.textAlign='right';
+      ctx.fillText(Math.round((i/5)*maxVal).toLocaleString('es-ES'),padL-4,y+4);
+    }
+    clientesConDatos.forEach((c,i)=>{
+      const x=padL+i*gap+gap/2-barW/2;
+      let yBase=padT+cH; let total=0;
+      matsUsados.forEach((mat,mi)=>{
+        const val=porCliente[c]?.[mat]||0; if(!val) return;
+        const bH=(val/maxVal)*cH; yBase-=bH; total+=val;
+        ctx.fillStyle=COLORS[mi%COLORS.length]; ctx.fillRect(x,yBase,barW,bH);
+        // Resaltar barra del cliente seleccionado
+        if(cli&&c===cli){ctx.strokeStyle='#1a1916';ctx.lineWidth=2;ctx.strokeRect(x,yBase,barW,bH);}
+        if(bH>14){ctx.fillStyle='rgba(255,255,255,0.9)';ctx.font='10px sans-serif';ctx.textAlign='center';ctx.fillText(val.toLocaleString('es-ES',{maximumFractionDigits:0}),x+barW/2,yBase+bH/2+4);}
+      });
+      ctx.fillStyle=cli&&c===cli?'var(--accent)':'#1a1916';
+      ctx.font=cli&&c===cli?'bold 12px sans-serif':'bold 11px sans-serif';
+      ctx.textAlign='center';
+      ctx.fillText(total.toLocaleString('es-ES',{maximumFractionDigits:1}),x+barW/2,padT+cH-(total/maxVal)*cH-5);
+      ctx.save();ctx.translate(x+barW/2,padT+cH+10);ctx.rotate(-Math.PI/4);
+      ctx.textAlign='right';ctx.fillStyle=cli&&c===cli?'#2a5c45':'#6b6860';
+      ctx.font=cli&&c===cli?'bold 10px sans-serif':'10px sans-serif';
+      ctx.fillText(c.length>22?c.slice(0,20)+'…':c,0,0);ctx.restore();
     });
   },50);
 }
+
 
 // ── EXPORTAR CSV ──
 function exportCSV(tipo){
