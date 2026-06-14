@@ -1248,10 +1248,17 @@ function renderDetalleMaterial(mat, periodo){
 
   const MESES_IDX=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const periodoLabel=periodo?(()=>{const[y,m]=periodo.split('-');return`${MESES_IDX[parseInt(m)-1]} ${y}`;})():'';
-  let pedsMat=pedidos.filter(p=>p.material===mat);
-  if(periodo) pedsMat=pedsMat.filter(p=>{const ym=`${p.anyo}-${String(MESES_IDX.indexOf(p.mes)+1).padStart(2,'0')}`;return ym===periodo;});
-  if(!pedsMat.length){wrap.innerHTML=`<div class="placeholder-box" style="margin-bottom:16px"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel?' en '+periodoLabel:''}</div>`;return;}
 
+  // Todos los pedidos del material filtrados por período de CREACIÓN del pedido
+  let pedsMat=pedidos.filter(p=>p.material===mat);
+  if(periodo) pedsMat=pedsMat.filter(p=>{
+    if(!p.fechaCreacion) return false;
+    const[y,m]=p.fechaCreacion.split('-');
+    return`${y}-${m.padStart(2,'0')}`===periodo;
+  });
+  if(!pedsMat.length){wrap.innerHTML=`<div class="placeholder-box" style="margin-bottom:16px"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel?' creados en '+periodoLabel:''}</div>`;return;}
+
+  // Agrupar por cliente
   const porCliente={};
   pedsMat.forEach(p=>{
     if(!porCliente[p.cliente])porCliente[p.cliente]={pedido:0,entregado:0};
@@ -1262,11 +1269,20 @@ function renderDetalleMaterial(mat, periodo){
   const totalPedido=clientes.reduce((s,[,v])=>s+v.pedido,0);
   const totalEntregado=clientes.reduce((s,[,v])=>s+v.entregado,0);
   const totalPendiente=totalPedido-totalEntregado;
+
+  // Precio medio ponderado filtrado por período de ENTREGA
   let ents=entregas.filter(e=>e.material===mat);
-  if(periodo) ents=ents.filter(e=>{const[y,m]=e.fecha.split('-');return`${y}-${m.padStart(2,'0')}`===periodo;});
+  if(periodo) ents=ents.filter(e=>{
+    if(!e.fecha) return false;
+    const[y,m]=e.fecha.split('-');
+    return`${y}-${m.padStart(2,'0')}`===periodo;
+  });
   let tcant=0,timp=0;
   ents.forEach(e=>{const p=pedidos.find(pp=>pp.num===e.num&&pp.material===e.material);if(p&&p.precio){tcant+=e.cantidad;timp+=e.cantidad*p.precio;}});
   const precioMedio=tcant>0?timp/tcant:0;
+
+  // Total entregado en el período seleccionado
+  const totalEntPeriodo=ents.reduce((s,e)=>s+e.cantidad,0);
 
   const datosEnt=[
     ...clientes.map(([cli,v],i)=>({label:cli,valor:v.entregado,color:COLORS[i%COLORS.length]})).filter(d=>d.valor>0),
@@ -1277,9 +1293,9 @@ function renderDetalleMaterial(mat, periodo){
   wrap.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
       <div class="stat-card"><div class="stat-label">Total pedido</div><div class="stat-value">${totalPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
-      <div class="stat-card"><div class="stat-label">Entregado${periodoLabel?' ('+periodoLabel+')':''}</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
-      <div class="stat-card"><div class="stat-label">Pendiente</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
-      <div class="stat-card"><div class="stat-label">Precio medio</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/Tn</div></div>
+      <div class="stat-card"><div class="stat-label">Total entregado</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+      <div class="stat-card"><div class="stat-label">${periodo?'Entregado en '+periodoLabel:'Pendiente'}</div><div class="stat-value ${periodo?'green':'amber'}">${periodo?totalEntPeriodo.toLocaleString('es-ES',{maximumFractionDigits:1}):totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+      <div class="stat-card"><div class="stat-label">Precio medio${periodoLabel?' ('+periodoLabel+')':''}</div><div class="stat-value">${precioMedio>0?precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})+' €/Tn':'—'}</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
       <div class="card" style="padding:16px">
