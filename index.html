@@ -1137,7 +1137,7 @@ function setVistaAnalitica(v){
     document.getElementById('vista-'+id).style.display = v===id?'block':'none';
     document.getElementById('btn-vista-'+id).className = 'btn '+(v===id?'btn-primary':'btn-secondary');
   });
-  if(v==='material') { renderResumenMaterial(); renderAnaliticaMaterial(); }
+  if(v==='material') renderVistaMaterial();
   if(v==='cliente') renderAnaliticaCliente();
 }
 
@@ -1151,13 +1151,26 @@ function initAnalitica(){
     sel.innerHTML='<option value="">Todos los períodos</option>'+periodos.map(ym=>`<option value="${ym}">${ymToLabel(ym)}</option>`).join('');
     if(prev) sel.value=prev;
   });
-  renderResumenMaterial();
-  renderAnaliticaMaterial();
+  renderVistaMaterial();
+}
+
+// ── VISTA MATERIAL: orquesta detalle + resumen ──
+function renderVistaMaterial(){
+  const mat = document.getElementById('a-material').value;
+  const periodo = document.getElementById('a-material-periodo').value;
+  // 1. Renderizar detalle (tartas) si hay material seleccionado
+  renderDetalleMaterial(mat, periodo);
+  // 2. Renderizar resumen general (barras + tabla)
+  renderResumenMaterial(periodo);
+}
+
+function renderAnaliticaMaterial(){
+  renderVistaMaterial();
 }
 
 // ── RESUMEN GENERAL: barras por material + tabla precios ──
-function renderResumenMaterial(){
-  const periodo = document.getElementById('a-material-periodo')?.value || '';
+function renderResumenMaterial(periodo){
+  if(periodo===undefined) periodo = document.getElementById('a-material-periodo')?.value || '';
   const porMat = {};
   entregas.filter(e=>periodo?fechaToYM(e.fecha)===periodo:true).forEach(e=>{
     if(!e.material) return;
@@ -1167,70 +1180,78 @@ function renderResumenMaterial(){
     if(ped&&ped.precio){porMat[e.material].imp+=e.cantidad*ped.precio;porMat[e.material].cant+=e.cantidad;}
   });
   const mats=Object.entries(porMat).sort((a,b)=>b[1].total-a[1].total);
-  if(!mats.length) return;
 
-  // Tabla precios
+  // Tabla precios medios
   const tabla=document.getElementById('tabla-precios-medios');
-  if(tabla) tabla.innerHTML=`<table><thead><tr><th>Material</th><th style="text-align:right">Total (Tn)</th><th style="text-align:right">Precio medio</th></tr></thead>
-  <tbody>${mats.map(([mat,v],i)=>{
-    const pm=v.cant>0?v.imp/v.cant:0;
-    return `<tr>
-      <td style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${COLORS[i%COLORS.length]};flex-shrink:0"></span><span style="font-size:12px">${mat}</span></td>
-      <td style="text-align:right;font-family:var(--mono);font-size:12px">${v.total.toLocaleString('es-ES',{maximumFractionDigits:1})}</td>
-      <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600">${pm>0?pm.toLocaleString('es-ES',{minimumFractionDigits:2})+' €/Tn':'—'}</td>
-    </tr>`;
-  }).join('')}</tbody></table>`;
+  if(tabla) tabla.innerHTML = mats.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr>
+      <th style="text-align:left;padding:4px 6px;font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid var(--border)">Material</th>
+      <th style="text-align:right;padding:4px 6px;font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid var(--border)">Tn</th>
+      <th style="text-align:right;padding:4px 6px;font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid var(--border)">€/Tn</th>
+    </tr></thead>
+    <tbody>${mats.map(([mat,v],i)=>{
+      const pm=v.cant>0?v.imp/v.cant:0;
+      return `<tr>
+        <td style="padding:5px 6px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:5px">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${COLORS[i%COLORS.length]};flex-shrink:0"></span>
+            <span style="font-size:11px;color:var(--text)">${mat}</span>
+          </div>
+        </td>
+        <td style="text-align:right;padding:5px 6px;font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border)">${v.total.toLocaleString('es-ES',{maximumFractionDigits:1})}</td>
+        <td style="text-align:right;padding:5px 6px;font-family:var(--mono);font-size:11px;font-weight:600;border-bottom:1px solid var(--border);color:var(--accent)">${pm>0?pm.toLocaleString('es-ES',{minimumFractionDigits:2}):'—'}</td>
+      </tr>`;
+    }).join('')}</tbody></table>` : '<div style="color:var(--text3);font-size:12px">Sin datos</div>';
+
+  if(!mats.length) return;
 
   // Gráfico barras
   setTimeout(()=>{
     const canvas=document.getElementById('bar-materiales'); if(!canvas) return;
     const ctx=canvas.getContext('2d');
-    const W=canvas.parentElement.offsetWidth||600, H=320;
+    const W=canvas.parentElement.offsetWidth-2, H=300;
     canvas.width=W; canvas.height=H;
-    const padL=55,padR=20,padT=24,padB=90;
-    const cW=W-padL-padR, cH=H-padT-padB;
+    const padL=50,padR=10,padT=20,padB=85,cW=W-padL-padR,cH=H-padT-padB;
     const vals=mats.map(([,v])=>v.total);
     const maxVal=Math.max(...vals)*1.12||1;
-    const barW=Math.min(55,(cW/mats.length)*0.55);
+    const barW=Math.max(20,Math.min(48,(cW/mats.length)*0.6));
     const gap=cW/mats.length;
     ctx.clearRect(0,0,W,H);
-    ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
-    for(let i=0;i<=5;i++){
-      const y=padT+cH-(i/5)*cH;
-      ctx.strokeStyle='#e0ddd8';ctx.lineWidth=1;
+    ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--surface')||'#fff';
+    ctx.fillRect(0,0,W,H);
+    for(let i=0;i<=4;i++){
+      const y=padT+cH-(i/4)*cH;
+      ctx.strokeStyle='#e0ddd8';ctx.lineWidth=0.5;
       ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(padL+cW,y);ctx.stroke();
-      ctx.fillStyle='#9e9b94';ctx.font='11px sans-serif';ctx.textAlign='right';
-      ctx.fillText(Math.round((i/5)*maxVal).toLocaleString('es-ES'),padL-4,y+4);
+      ctx.fillStyle='#9e9b94';ctx.font='10px sans-serif';ctx.textAlign='right';
+      ctx.fillText(Math.round((i/4)*maxVal).toLocaleString('es-ES'),padL-3,y+4);
     }
     mats.forEach(([mat,v],i)=>{
       const x=padL+i*gap+gap/2-barW/2;
       const bH=(v.total/maxVal)*cH;
       const y=padT+cH-bH;
       ctx.fillStyle=COLORS[i%COLORS.length];
-      if(ctx.roundRect) ctx.roundRect(x,y,barW,bH,4); else ctx.rect(x,y,barW,bH);
-      ctx.fill();
-      ctx.fillStyle='#1a1916';ctx.font='bold 11px sans-serif';ctx.textAlign='center';
-      ctx.fillText(v.total.toLocaleString('es-ES',{maximumFractionDigits:1}),x+barW/2,y-5);
-      ctx.save();ctx.translate(x+barW/2,padT+cH+10);ctx.rotate(-Math.PI/4);
+      ctx.fillRect(x,y,barW,bH);
+      ctx.fillStyle='#1a1916';ctx.font='bold 10px sans-serif';ctx.textAlign='center';
+      ctx.fillText(v.total.toLocaleString('es-ES',{maximumFractionDigits:1}),x+barW/2,y-4);
+      ctx.save();ctx.translate(x+barW/2,padT+cH+8);ctx.rotate(-Math.PI/4);
       ctx.textAlign='right';ctx.fillStyle='#6b6860';ctx.font='10px sans-serif';
-      ctx.fillText(mat.length>22?mat.slice(0,20)+'…':mat,0,0);ctx.restore();
+      ctx.fillText(mat.length>20?mat.slice(0,18)+'…':mat,0,0);ctx.restore();
     });
   },50);
 }
 
-// ── DETALLE MATERIAL SELECCIONADO ──
-function renderAnaliticaMaterial(){
-  const mat=document.getElementById('a-material').value;
-  const periodo=document.getElementById('a-material-periodo').value;
+// ── DETALLE MATERIAL SELECCIONADO (tartas) ──
+function renderDetalleMaterial(mat, periodo){
   const wrap=document.getElementById('detalle-material');
-  renderResumenMaterial();
   if(!mat){wrap.innerHTML='';return;}
 
   const MESES_IDX=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const periodoLabel=periodo?(()=>{const[y,m]=periodo.split('-');return`${MESES_IDX[parseInt(m)-1]} ${y}`;})():'';
   let pedsMat=pedidos.filter(p=>p.material===mat);
   if(periodo) pedsMat=pedsMat.filter(p=>{const ym=`${p.anyo}-${String(MESES_IDX.indexOf(p.mes)+1).padStart(2,'0')}`;return ym===periodo;});
-  if(!pedsMat.length){wrap.innerHTML=`<div class="placeholder-box"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel?' en '+periodoLabel:''}</div>`;return;}
+  if(!pedsMat.length){wrap.innerHTML=`<div class="placeholder-box" style="margin-bottom:16px"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel?' en '+periodoLabel:''}</div>`;return;}
+
   const porCliente={};
   pedsMat.forEach(p=>{
     if(!porCliente[p.cliente])porCliente[p.cliente]={pedido:0,entregado:0};
@@ -1246,58 +1267,64 @@ function renderAnaliticaMaterial(){
   let tcant=0,timp=0;
   ents.forEach(e=>{const p=pedidos.find(pp=>pp.num===e.num&&pp.material===e.material);if(p&&p.precio){tcant+=e.cantidad;timp+=e.cantidad*p.precio;}});
   const precioMedio=tcant>0?timp/tcant:0;
+
   const datosEnt=[
     ...clientes.map(([cli,v],i)=>({label:cli,valor:v.entregado,color:COLORS[i%COLORS.length]})).filter(d=>d.valor>0),
     ...(totalPendiente>0?[{label:'Pendiente',valor:totalPendiente,color:'#d4cfc8'}]:[])
   ];
   const datosPend=clientes.map(([cli,v],i)=>({label:cli,valor:Math.max(0,v.pedido-v.entregado),color:COLORS[i%COLORS.length]})).filter(d=>d.valor>0);
+
   wrap.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
-      <div class="stat-card"><div class="stat-label">Total pedido activo</div><div class="stat-value">${totalPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
-      <div class="stat-card"><div class="stat-label">Total entregado${periodoLabel?' ('+periodoLabel+')':''}</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+      <div class="stat-card"><div class="stat-label">Total pedido</div><div class="stat-value">${totalPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+      <div class="stat-card"><div class="stat-label">Entregado${periodoLabel?' ('+periodoLabel+')':''}</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
       <div class="stat-card"><div class="stat-label">Pendiente</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
       <div class="stat-card"><div class="stat-label">Precio medio</div><div class="stat-value">${precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})} €/Tn</div></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-      <div class="card" style="padding:20px">
-        <div class="sec-label">Entregado por cliente</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:14px">% sobre total pedido (${totalPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn) · Gris = pendiente</div>
-        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-          <canvas id="pie-mat-ent" width="200" height="200" style="flex-shrink:0"></canvas>
-          <div style="flex:1;min-width:140px">
-            ${clientes.map(([cli,v],i)=>`<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
-              <div style="width:11px;height:11px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
-              <div style="flex:1;font-size:12px">${cli}</div>
-              <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent)">${v.entregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div>
-              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPedido?Math.round(v.entregado/totalPedido*100):0}%</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <div class="card" style="padding:16px">
+        <div class="sec-label" style="margin-bottom:12px">Entregado por cliente</div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <canvas id="pie-mat-ent" width="180" height="180" style="flex-shrink:0"></canvas>
+          <div style="flex:1">
+            ${clientes.map(([cli,v],i)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+              <div style="width:9px;height:9px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
+              <div style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cli}</div>
+              <div style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--accent)">${v.entregado.toLocaleString('es-ES',{maximumFractionDigits:1})}</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:28px;text-align:right">${totalPedido?Math.round(v.entregado/totalPedido*100):0}%</div>
             </div>`).join('')}
-            <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
-              <div style="width:11px;height:11px;border-radius:50%;background:#d4cfc8;flex-shrink:0"></div>
-              <div style="flex:1;font-size:12px;color:var(--text3)">Pendiente total</div>
-              <div style="font-family:var(--mono);font-size:11px;color:var(--text3)">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div>
-              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPedido?Math.round(totalPendiente/totalPedido*100):0}%</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+              <div style="width:9px;height:9px;border-radius:50%;background:#d4cfc8;flex-shrink:0"></div>
+              <div style="flex:1;font-size:11px;color:var(--text3)">Pendiente</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3)">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})}</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:28px;text-align:right">${totalPedido?Math.round(totalPendiente/totalPedido*100):0}%</div>
             </div>
           </div>
         </div>
       </div>
-      <div class="card" style="padding:20px">
-        <div class="sec-label">Pendiente por cliente</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:14px">% sobre total pendiente (${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn)</div>
-        ${datosPend.length?`<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-          <canvas id="pie-mat-pend" width="200" height="200" style="flex-shrink:0"></canvas>
-          <div style="flex:1;min-width:140px">${clientes.filter(([,v])=>v.pedido-v.entregado>0).map(([cli,v],i)=>`<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
-              <div style="width:11px;height:11px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
-              <div style="flex:1;font-size:12px">${cli}</div>
-              <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--warn)">${(v.pedido-v.entregado).toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div>
-              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:35px;text-align:right">${totalPendiente?Math.round((v.pedido-v.entregado)/totalPendiente*100):0}%</div>
-            </div>`).join('')}</div>
+      <div class="card" style="padding:16px">
+        <div class="sec-label" style="margin-bottom:12px">Pendiente por cliente</div>
+        ${datosPend.length?`<div style="display:flex;gap:12px;align-items:center">
+          <canvas id="pie-mat-pend" width="180" height="180" style="flex-shrink:0"></canvas>
+          <div style="flex:1">
+            ${clientes.filter(([,v])=>v.pedido-v.entregado>0).map(([cli,v],i)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+              <div style="width:9px;height:9px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
+              <div style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cli}</div>
+              <div style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--warn)">${(v.pedido-v.entregado).toLocaleString('es-ES',{maximumFractionDigits:1})}</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:28px;text-align:right">${totalPendiente?Math.round((v.pedido-v.entregado)/totalPendiente*100):0}%</div>
+            </div>`).join('')}
+          </div>
         </div>`:`<div class="empty-state" style="padding:1rem">✅ Todo entregado</div>`}
       </div>
     </div>`;
-  setTimeout(()=>{
-    if(datosEnt.length) drawPieChart('pie-mat-ent',datosEnt,totalPedido);
-    if(datosPend.length) drawPieChart('pie-mat-pend',datosPend,totalPendiente);
-  },50);
+
+  // Dibujar tartas INMEDIATAMENTE después de insertar el HTML
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      if(datosEnt.length) drawPieChart('pie-mat-ent',datosEnt,totalPedido);
+      if(datosPend.length) drawPieChart('pie-mat-pend',datosPend,totalPendiente);
+    });
+  });
 }
 
 // ── VISTA CLIENTE: barras apiladas ──
@@ -1307,12 +1334,10 @@ function renderAnaliticaCliente(){
   const wrapDetalle = document.getElementById('detalle-cliente');
   const wrap = document.getElementById('resultado-cliente');
 
-  const matsAll=[...new Set(entregas.map(e=>e.material).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
-  const clientesAll=[...new Set(entregas.map(e=>e.cliente).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
-
   const entsFiltradas = entregas.filter(e=>periodo?fechaToYM(e.fecha)===periodo:true);
+  const matsAll=[...new Set(entsFiltradas.map(e=>e.material).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  const clientesAll=[...new Set(entsFiltradas.map(e=>e.cliente).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
 
-  // Agrupar por cliente → material
   const porCliente={};
   entsFiltradas.forEach(e=>{
     if(!e.cliente||!e.material) return;
@@ -1323,7 +1348,6 @@ function renderAnaliticaCliente(){
   const matsUsados=matsAll.filter(m=>clientesAll.some(c=>porCliente[c]?.[m]>0));
   const clientesConDatos=clientesAll.filter(c=>matsUsados.some(m=>porCliente[c]?.[m]>0));
 
-  // Precio medio por material
   const precioPorMat={};
   matsUsados.forEach(mat=>{
     let tc=0,ti=0;
@@ -1334,101 +1358,105 @@ function renderAnaliticaCliente(){
     precioPorMat[mat]=tc>0?ti/tc:0;
   });
 
-  // ── DETALLE cliente seleccionado (aparece ANTES de la gráfica global) ──
-  if(cli) {
+  // Detalle cliente seleccionado
+  if(cli){
     const pedsCliente=pedidos.filter(p=>p.cliente===cli);
     const porMaterial={};
     pedsCliente.forEach(p=>{
       if(!porMaterial[p.material])porMaterial[p.material]={pedido:0,entPeriodo:0,entOtros:0,precio:p.precio};
       porMaterial[p.material].pedido+=p.cantPedida;
     });
-    const entsCli=entregas.filter(e=>e.cliente===cli);
-    Object.keys(porMaterial).forEach(mat=>{
-      entsCli.filter(e=>e.material===mat).forEach(e=>{
-        const ym=fechaToYM(e.fecha);
-        if(periodo&&ym===periodo) porMaterial[mat].entPeriodo+=e.cantidad;
-        else porMaterial[mat].entOtros+=e.cantidad;
-      });
-      porMaterial[mat].pendiente=Math.max(0,porMaterial[mat].pedido-porMaterial[mat].entPeriodo-porMaterial[mat].entOtros);
+    entregas.filter(e=>e.cliente===cli).forEach(e=>{
+      if(!porMaterial[e.material]) return;
+      const ym=fechaToYM(e.fecha);
+      if(periodo&&ym===periodo) porMaterial[e.material].entPeriodo+=e.cantidad;
+      else porMaterial[e.material].entOtros+=e.cantidad;
     });
+    Object.keys(porMaterial).forEach(m=>{porMaterial[m].pendiente=Math.max(0,porMaterial[m].pedido-porMaterial[m].entPeriodo-porMaterial[m].entOtros);});
     const mats=Object.entries(porMaterial).sort((a,b)=>a[0].localeCompare(b[0],'es'));
-    const colPeriodo='#2a5c45',colOtros='#5b9bd5',colPend='#e07b39';
-    let detHtml=`<div class="card" style="padding:20px;margin-bottom:20px">
-      <div class="sec-label" style="margin-bottom:14px">Detalle — ${cli}${periodo?' · '+ymToLabel(periodo):''}</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px">`;
-    mats.forEach(([mat,v],idx)=>{
-      const total=v.pedido;
-      const pctP=total?Math.round(v.entPeriodo/total*100):0;
-      const pctO=total?Math.round(v.entOtros/total*100):0;
-      const pctPend=total?Math.round(v.pendiente/total*100):0;
-      const cid='pie-clidet-'+idx;
-      detHtml+=`<div style="text-align:center">
-        <div style="font-weight:600;font-size:11px;margin-bottom:8px;min-height:28px;display:flex;align-items:center;justify-content:center">${mat}</div>
-        <canvas id="${cid}" width="160" height="160" style="max-width:100%"></canvas>
-        <div style="font-family:var(--mono);font-size:10px;line-height:1.7;margin-top:6px">
-          ${periodo?`<div style="color:${colPeriodo};font-weight:500">${v.entPeriodo.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn período (${pctP}%)</div>`:''}
-          ${v.entOtros>0?`<div style="color:${colOtros}">${v.entOtros.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn otros (${pctO}%)</div>`:''}
-          <div style="color:${colPend}">${v.pendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn pend. (${pctPend}%)</div>
-        </div>
-      </div>`;
-    });
-    detHtml+=`</div></div>`;
-    wrapDetalle.innerHTML=detHtml;
-    setTimeout(()=>{
+    const colP='#2a5c45',colO='#5b9bd5',colPend='#e07b39';
+    wrapDetalle.innerHTML=`<div class="card" style="padding:16px;margin-bottom:16px">
+      <div class="sec-label" style="margin-bottom:12px">Detalle — ${cli}${periodo?' · '+ymToLabel(periodo):''}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px">
+        ${mats.map(([mat,v],idx)=>{
+          const t=v.pedido;
+          return `<div style="text-align:center;padding:10px;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border)">
+            <div style="font-weight:600;font-size:11px;margin-bottom:8px">${mat}</div>
+            <canvas id="pie-clidet-${idx}" width="140" height="140" style="max-width:100%"></canvas>
+            <div style="font-family:var(--mono);font-size:10px;line-height:1.7;margin-top:6px">
+              ${periodo?`<div style="color:${colP}">${v.entPeriodo.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn (${t?Math.round(v.entPeriodo/t*100):0}%)</div>`:''}
+              ${v.entOtros>0?`<div style="color:${colO}">${v.entOtros.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn otros (${t?Math.round(v.entOtros/t*100):0}%)</div>`:''}
+              <div style="color:${colPend}">${v.pendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn pend. (${t?Math.round(v.pendiente/t*100):0}%)</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
       mats.forEach(([,v],idx)=>{
-        const datos=[{valor:v.entPeriodo,color:'#2a5c45'},{valor:v.entOtros,color:'#5b9bd5'},{valor:v.pendiente,color:'#e07b39'}].filter(d=>d.valor>0);
+        const datos=[{valor:v.entPeriodo,color:colP},{valor:v.entOtros,color:colO},{valor:v.pendiente,color:colPend}].filter(d=>d.valor>0);
         drawPieChart('pie-clidet-'+idx,datos,v.pedido);
       });
-    },50);
+    }));
   } else {
     wrapDetalle.innerHTML='';
   }
 
-  // ── GRÁFICA GLOBAL: barras apiladas ──
+  // Gráfica global barras apiladas
   wrap.innerHTML=`
-    <div style="display:grid;grid-template-columns:1fr 360px;gap:20px;align-items:start">
-      <div class="card" style="padding:20px">
-        <div class="sec-label" style="margin-bottom:16px">Total entregado por cliente (Tn) — apilado por material</div>
-        <div style="position:relative;height:380px"><canvas id="bar-clientes"></canvas></div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">
-          ${matsUsados.map((m,i)=>`<span style="display:flex;align-items:center;gap:4px;font-size:11px">
-            <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${COLORS[i%COLORS.length]}"></span>${m}
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start">
+      <div class="card" style="padding:16px;overflow:hidden">
+        <div class="sec-label" style="margin-bottom:12px">Total entregado por cliente (Tn)</div>
+        <div style="position:relative;height:360px"><canvas id="bar-clientes"></canvas></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+          ${matsUsados.map((m,i)=>`<span style="display:flex;align-items:center;gap:4px;font-size:10px">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${COLORS[i%COLORS.length]}"></span>${m}
           </span>`).join('')}
         </div>
       </div>
-      <div class="card" style="padding:20px">
-        <div class="sec-label" style="margin-bottom:12px">Precio medio ponderado por material</div>
-        <table><thead><tr><th>Material</th><th style="text-align:right">Total (Tn)</th><th style="text-align:right">Precio medio</th></tr></thead>
-        <tbody>${matsUsados.map((mat,i)=>{
-          const tot=clientesConDatos.reduce((s,c)=>s+(porCliente[c]?.[mat]||0),0);
-          return `<tr>
-            <td style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${COLORS[i%COLORS.length]};flex-shrink:0"></span><span style="font-size:12px">${mat}</span></td>
-            <td style="text-align:right;font-family:var(--mono);font-size:12px">${tot.toLocaleString('es-ES',{maximumFractionDigits:1})}</td>
-            <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600">${precioPorMat[mat]>0?precioPorMat[mat].toLocaleString('es-ES',{minimumFractionDigits:2})+' €/Tn':'—'}</td>
-          </tr>`;
-        }).join('')}</tbody></table>
+      <div class="card" style="padding:16px">
+        <div class="sec-label" style="margin-bottom:10px">Precio medio por material</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr>
+            <th style="text-align:left;padding:4px 5px;font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)">Material</th>
+            <th style="text-align:right;padding:4px 5px;font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)">Tn</th>
+            <th style="text-align:right;padding:4px 5px;font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)">€/Tn</th>
+          </tr></thead>
+          <tbody>${matsUsados.map((mat,i)=>{
+            const tot=clientesConDatos.reduce((s,c)=>s+(porCliente[c]?.[mat]||0),0);
+            return `<tr>
+              <td style="padding:5px;border-bottom:1px solid var(--border)">
+                <div style="display:flex;align-items:center;gap:5px">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${COLORS[i%COLORS.length]};flex-shrink:0"></span>
+                  <span style="font-size:11px">${mat}</span>
+                </div>
+              </td>
+              <td style="text-align:right;padding:5px;font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border)">${tot.toLocaleString('es-ES',{maximumFractionDigits:1})}</td>
+              <td style="text-align:right;padding:5px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent);border-bottom:1px solid var(--border)">${precioPorMat[mat]>0?precioPorMat[mat].toLocaleString('es-ES',{minimumFractionDigits:2}):'—'}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
       </div>
     </div>`;
 
   setTimeout(()=>{
     const canvas=document.getElementById('bar-clientes'); if(!canvas) return;
     const ctx=canvas.getContext('2d');
-    const W=canvas.parentElement.offsetWidth||700, H=380;
+    const W=canvas.parentElement.offsetWidth-2, H=360;
     canvas.width=W; canvas.height=H;
-    const padL=55,padR=20,padT=24,padB=110;
-    const cW=W-padL-padR, cH=H-padT-padB;
+    const padL=50,padR=10,padT=20,padB=110,cW=W-padL-padR,cH=H-padT-padB;
     const totales=clientesConDatos.map(c=>matsUsados.reduce((s,m)=>s+(porCliente[c]?.[m]||0),0));
-    const maxVal=Math.max(...totales)*1.12||1;
-    const barW=Math.min(50,(cW/Math.max(clientesConDatos.length,1))*0.55);
+    const maxVal=Math.max(...totales,1)*1.12;
+    const barW=Math.max(16,Math.min(44,(cW/Math.max(clientesConDatos.length,1))*0.6));
     const gap=cW/Math.max(clientesConDatos.length,1);
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
-    for(let i=0;i<=5;i++){
-      const y=padT+cH-(i/5)*cH;
-      ctx.strokeStyle='#e0ddd8';ctx.lineWidth=1;
+    for(let i=0;i<=4;i++){
+      const y=padT+cH-(i/4)*cH;
+      ctx.strokeStyle='#e0ddd8';ctx.lineWidth=0.5;
       ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(padL+cW,y);ctx.stroke();
-      ctx.fillStyle='#9e9b94';ctx.font='11px sans-serif';ctx.textAlign='right';
-      ctx.fillText(Math.round((i/5)*maxVal).toLocaleString('es-ES'),padL-4,y+4);
+      ctx.fillStyle='#9e9b94';ctx.font='10px sans-serif';ctx.textAlign='right';
+      ctx.fillText(Math.round((i/4)*maxVal).toLocaleString('es-ES'),padL-3,y+4);
     }
     clientesConDatos.forEach((c,i)=>{
       const x=padL+i*gap+gap/2-barW/2;
@@ -1437,22 +1465,48 @@ function renderAnaliticaCliente(){
         const val=porCliente[c]?.[mat]||0; if(!val) return;
         const bH=(val/maxVal)*cH; yBase-=bH; total+=val;
         ctx.fillStyle=COLORS[mi%COLORS.length]; ctx.fillRect(x,yBase,barW,bH);
-        // Resaltar barra del cliente seleccionado
-        if(cli&&c===cli){ctx.strokeStyle='#1a1916';ctx.lineWidth=2;ctx.strokeRect(x,yBase,barW,bH);}
-        if(bH>14){ctx.fillStyle='rgba(255,255,255,0.9)';ctx.font='10px sans-serif';ctx.textAlign='center';ctx.fillText(val.toLocaleString('es-ES',{maximumFractionDigits:0}),x+barW/2,yBase+bH/2+4);}
+        if(cli&&c===cli){ctx.strokeStyle='#333';ctx.lineWidth=1.5;ctx.strokeRect(x,yBase,barW,bH);}
+        if(bH>12){ctx.fillStyle='rgba(255,255,255,0.9)';ctx.font='9px sans-serif';ctx.textAlign='center';ctx.fillText(val.toLocaleString('es-ES',{maximumFractionDigits:0}),x+barW/2,yBase+bH/2+4);}
       });
-      ctx.fillStyle=cli&&c===cli?'var(--accent)':'#1a1916';
-      ctx.font=cli&&c===cli?'bold 12px sans-serif':'bold 11px sans-serif';
-      ctx.textAlign='center';
-      ctx.fillText(total.toLocaleString('es-ES',{maximumFractionDigits:1}),x+barW/2,padT+cH-(total/maxVal)*cH-5);
-      ctx.save();ctx.translate(x+barW/2,padT+cH+10);ctx.rotate(-Math.PI/4);
+      ctx.fillStyle='#1a1916';ctx.font='bold 10px sans-serif';ctx.textAlign='center';
+      ctx.fillText(total.toLocaleString('es-ES',{maximumFractionDigits:1}),x+barW/2,padT+cH-(total/maxVal)*cH-4);
+      ctx.save();ctx.translate(x+barW/2,padT+cH+8);ctx.rotate(-Math.PI/4);
       ctx.textAlign='right';ctx.fillStyle=cli&&c===cli?'#2a5c45':'#6b6860';
       ctx.font=cli&&c===cli?'bold 10px sans-serif':'10px sans-serif';
-      ctx.fillText(c.length>22?c.slice(0,20)+'…':c,0,0);ctx.restore();
+      ctx.fillText(c.length>20?c.slice(0,18)+'…':c,0,0);ctx.restore();
     });
   },50);
 }
 
+
+// ── DIBUJAR TARTA ──
+function drawPieChart(canvasId, datos, base) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W/2, cy = H/2, r = Math.min(cx,cy) - 6;
+  ctx.clearRect(0,0,W,H);
+  const total = datos.reduce((s,d)=>s+d.valor,0);
+  if (!total) return;
+  const b = base || total;
+  let angle = -Math.PI/2;
+  datos.forEach((d,i)=>{
+    const slice = (d.valor/total)*2*Math.PI;
+    ctx.beginPath(); ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,r,angle,angle+slice); ctx.closePath();
+    ctx.fillStyle = d.color || COLORS[i%COLORS.length];
+    ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke();
+    if(slice>0.25){
+      const mid=angle+slice/2;
+      ctx.fillStyle='#fff'; ctx.font='bold 11px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(Math.round(d.valor/b*100)+'%', cx+(r*.65)*Math.cos(mid), cy+(r*.65)*Math.sin(mid));
+    }
+    angle+=slice;
+  });
+}
 
 // ── EXPORTAR CSV ──
 function exportCSV(tipo){
