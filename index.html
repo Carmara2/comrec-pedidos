@@ -1259,8 +1259,7 @@ function renderDetalleMaterial(mat, periodo){
 
   // Entregas en el período seleccionado (fecha de entrega)
   let entsEnPeriodo = entregas.filter(e=>e.material===mat);
-  // DEBUG temporal
-  if(periodo==='2026-06') console.log('Entregas SAICA-JUNIO_26:', entregas.filter(e=>e.num==='SAICA-JUNIO_26').map(e=>({fecha:e.fecha,ym:fechaToYM(e.fecha),cantidad:e.cantidad})));
+  const todasEnts = entsEnPeriodo; // todas las entregas del material
   if(periodo) entsEnPeriodo = entsEnPeriodo.filter(e=>{
     if(!e.fecha) return false;
     const[y,m]=e.fecha.split('-');
@@ -1271,7 +1270,7 @@ function renderDetalleMaterial(mat, periodo){
   const totalPedido    = pedsActivos.reduce((s,p)=>s+p.cantPedida,0);
   const totalPendiente = pedsActivos.reduce((s,p)=>s+Math.max(0,p.cantPedida-p.cantEntregada),0);
   const totalEntPeriodo = entsEnPeriodo.reduce((s,e)=>s+e.cantidad,0);
-  const totalEntregado  = pedidos.filter(p=>p.material===mat).reduce((s,p)=>s+p.cantEntregada,0);
+  const totalEntregado  = todasEnts.reduce((s,e)=>s+e.cantidad,0);
 
   // Precio medio ponderado de entregas en el período
   let tcant=0,timp=0;
