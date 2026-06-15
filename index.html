@@ -1249,14 +1249,26 @@ function renderDetalleMaterial(mat, periodo){
   const MESES_IDX=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const periodoLabel=periodo?(()=>{const[y,m]=periodo.split('-');return`${MESES_IDX[parseInt(m)-1]} ${y}`;})():'';
 
-  // Todos los pedidos del material filtrados por período de CREACIÓN del pedido
-  let pedsMat=pedidos.filter(p=>p.material===mat);
-  if(periodo) pedsMat=pedsMat.filter(p=>{
-    if(!p.fechaCreacion) return false;
-    const[y,m]=p.fechaCreacion.split('-');
-    return`${y}-${m.padStart(2,'0')}`===periodo;
-  });
-  if(!pedsMat.length){wrap.innerHTML=`<div class="placeholder-box" style="margin-bottom:16px"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel?' creados en '+periodoLabel:''}</div>`;return;}
+  // Pedidos del material: todos los que tienen entregas en el período seleccionado
+  // más todos los pedidos activos (pendientes de entregar)
+  const todosLosPedidos = pedidos.filter(p => p.material === mat);
+  let pedsMat;
+  if(periodo) {
+    const numsConEntregasEnPeriodo = new Set(
+      entregas.filter(e => {
+        if(e.material !== mat) return false;
+        if(!e.fecha) return false;
+        const[y,m]=e.fecha.split('-');
+        return `${y}-${m.padStart(2,'0')}` === periodo;
+      }).map(e => e.num)
+    );
+    pedsMat = todosLosPedidos.filter(p =>
+      numsConEntregasEnPeriodo.has(p.num) || p.activo
+    );
+  } else {
+    pedsMat = todosLosPedidos;
+  }
+  if(!pedsMat.length){wrap.innerHTML=`<div class="placeholder-box" style="margin-bottom:16px"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel?' con actividad en '+periodoLabel:''}</div>`;return;}
 
   // Agrupar por cliente
   const porCliente={};
