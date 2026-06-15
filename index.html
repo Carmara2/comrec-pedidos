@@ -1259,6 +1259,8 @@ function renderDetalleMaterial(mat, periodo){
 
   // Entregas en el período seleccionado (fecha de entrega)
   let entsEnPeriodo = entregas.filter(e=>e.material===mat);
+  // DEBUG temporal
+  if(periodo==='2026-06') console.log('Entregas SAICA-JUNIO_26:', entregas.filter(e=>e.num==='SAICA-JUNIO_26').map(e=>({fecha:e.fecha,ym:fechaToYM(e.fecha),cantidad:e.cantidad})));
   if(periodo) entsEnPeriodo = entsEnPeriodo.filter(e=>{
     if(!e.fecha) return false;
     const[y,m]=e.fecha.split('-');
