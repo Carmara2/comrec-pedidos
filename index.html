@@ -1249,110 +1249,108 @@ function renderDetalleMaterial(mat, periodo){
   const MESES_IDX=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const periodoLabel=periodo?(()=>{const[y,m]=periodo.split('-');return`${MESES_IDX[parseInt(m)-1]} ${y}`;})():'';
 
-  // Pedidos del material: todos los que tienen entregas en el período seleccionado
-  // más todos los pedidos activos (pendientes de entregar)
-  const todosLosPedidos = pedidos.filter(p => p.material === mat);
-  let pedsMat;
-  if(periodo) {
-    const numsConEntregasEnPeriodo = new Set(
-      entregas.filter(e => {
-        if(e.material !== mat) return false;
-        if(!e.fecha) return false;
-        const[y,m]=e.fecha.split('-');
-        return `${y}-${m.padStart(2,'0')}` === periodo;
-      }).map(e => e.num)
-    );
-    pedsMat = todosLosPedidos.filter(p =>
-      numsConEntregasEnPeriodo.has(p.num) || p.activo
-    );
-  } else {
-    pedsMat = todosLosPedidos;
+  // Pedidos ACTIVOS del material (para Total Pedido y Pendiente — sin filtro período)
+  const pedsActivos = pedidos.filter(p=>p.material===mat&&p.activo);
+
+  if(!pedidos.filter(p=>p.material===mat).length){
+    wrap.innerHTML=`<div class="placeholder-box" style="margin-bottom:16px"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b></div>`;
+    return;
   }
-  if(!pedsMat.length){wrap.innerHTML=`<div class="placeholder-box" style="margin-bottom:16px"><span class="placeholder-icon">📭</span>No hay pedidos de <b>${mat}</b>${periodoLabel?' con actividad en '+periodoLabel:''}</div>`;return;}
 
-  // Agrupar por cliente
-  const porCliente={};
-  pedsMat.forEach(p=>{
-    if(!porCliente[p.cliente])porCliente[p.cliente]={pedido:0,entregado:0};
-    porCliente[p.cliente].pedido+=p.cantPedida;
-    porCliente[p.cliente].entregado+=p.cantEntregada;
-  });
-  const clientes=Object.entries(porCliente).sort((a,b)=>b[1].pedido-a[1].pedido);
-  const totalPedido=clientes.reduce((s,[,v])=>s+v.pedido,0);
-  const totalEntregado=clientes.reduce((s,[,v])=>s+v.entregado,0);
-  const totalPendiente=totalPedido-totalEntregado;
-
-  // Precio medio ponderado filtrado por período de ENTREGA
-  let ents=entregas.filter(e=>e.material===mat);
-  if(periodo) ents=ents.filter(e=>{
+  // Entregas en el período seleccionado (fecha de entrega)
+  let entsEnPeriodo = entregas.filter(e=>e.material===mat);
+  if(periodo) entsEnPeriodo = entsEnPeriodo.filter(e=>{
     if(!e.fecha) return false;
     const[y,m]=e.fecha.split('-');
-    return`${y}-${m.padStart(2,'0')}`===periodo;
+    return `${y}-${m.padStart(2,'0')}`===periodo;
   });
+
+  // Totales
+  const totalPedido    = pedsActivos.reduce((s,p)=>s+p.cantPedida,0);
+  const totalPendiente = pedsActivos.reduce((s,p)=>s+Math.max(0,p.cantPedida-p.cantEntregada),0);
+  const totalEntPeriodo = entsEnPeriodo.reduce((s,e)=>s+e.cantidad,0);
+  const totalEntregado  = pedidos.filter(p=>p.material===mat).reduce((s,p)=>s+p.cantEntregada,0);
+
+  // Precio medio ponderado de entregas en el período
   let tcant=0,timp=0;
-  ents.forEach(e=>{const p=pedidos.find(pp=>pp.num===e.num&&pp.material===e.material);if(p&&p.precio){tcant+=e.cantidad;timp+=e.cantidad*p.precio;}});
+  entsEnPeriodo.forEach(e=>{
+    const p=pedidos.find(pp=>pp.num===e.num&&pp.material===e.material);
+    if(p&&p.precio){tcant+=e.cantidad;timp+=e.cantidad*p.precio;}
+  });
   const precioMedio=tcant>0?timp/tcant:0;
 
-  // Total entregado en el período seleccionado
-  const totalEntPeriodo=ents.reduce((s,e)=>s+e.cantidad,0);
+  // Tarta ENTREGADO: por cliente según entregas del período
+  const entPorCliente={};
+  entsEnPeriodo.forEach(e=>{
+    if(!e.cliente) return;
+    entPorCliente[e.cliente]=(entPorCliente[e.cliente]||0)+e.cantidad;
+  });
+  const clientesEnt=Object.entries(entPorCliente).sort((a,b)=>b[1]-a[1]);
 
+  // Tarta PENDIENTE: por cliente según pedidos activos
+  const pendPorCliente={};
+  pedsActivos.forEach(p=>{
+    const pend=Math.max(0,p.cantPedida-p.cantEntregada);
+    if(pend>0) pendPorCliente[p.cliente]=(pendPorCliente[p.cliente]||0)+pend;
+  });
+  const clientesPend=Object.entries(pendPorCliente).sort((a,b)=>b[1]-a[1]);
+
+  // Datos tartas
   const datosEnt=[
-    ...clientes.map(([cli,v],i)=>({label:cli,valor:v.entregado,color:COLORS[i%COLORS.length]})).filter(d=>d.valor>0),
+    ...clientesEnt.map(([cli,v],i)=>({label:cli,valor:v,color:COLORS[i%COLORS.length]})),
     ...(totalPendiente>0?[{label:'Pendiente',valor:totalPendiente,color:'#d4cfc8'}]:[])
-  ];
-  const datosPend=clientes.map(([cli,v],i)=>({label:cli,valor:Math.max(0,v.pedido-v.entregado),color:COLORS[i%COLORS.length]})).filter(d=>d.valor>0);
+  ].filter(d=>d.valor>0);
+  const datosPend=clientesPend.map(([cli,v],i)=>({label:cli,valor:v,color:COLORS[i%COLORS.length]})).filter(d=>d.valor>0);
 
   wrap.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
-      <div class="stat-card"><div class="stat-label">Total pedido</div><div class="stat-value">${totalPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
-      <div class="stat-card"><div class="stat-label">Total entregado</div><div class="stat-value green">${totalEntregado.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
-      <div class="stat-card"><div class="stat-label">${periodo?'Entregado en '+periodoLabel:'Pendiente'}</div><div class="stat-value ${periodo?'green':'amber'}">${periodo?totalEntPeriodo.toLocaleString('es-ES',{maximumFractionDigits:1}):totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+      <div class="stat-card"><div class="stat-label">Total pedido (activos)</div><div class="stat-value">${totalPedido.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+      <div class="stat-card"><div class="stat-label">${periodo?'Entregado en '+periodoLabel:'Total entregado'}</div><div class="stat-value green">${(periodo?totalEntPeriodo:totalEntregado).toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
+      <div class="stat-card"><div class="stat-label">Pendiente (pedidos activos)</div><div class="stat-value amber">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})} Tn</div></div>
       <div class="stat-card"><div class="stat-label">Precio medio${periodoLabel?' ('+periodoLabel+')':''}</div><div class="stat-value">${precioMedio>0?precioMedio.toLocaleString('es-ES',{minimumFractionDigits:2})+' €/Tn':'—'}</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
       <div class="card" style="padding:16px">
-        <div class="sec-label" style="margin-bottom:12px">Entregado por cliente</div>
-        <div style="display:flex;gap:12px;align-items:center">
+        <div class="sec-label" style="margin-bottom:4px">Entregado por cliente</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:10px">${periodo?'Entregas realizadas en '+periodoLabel:'Total histórico de entregas'}</div>
+        ${clientesEnt.length?`<div style="display:flex;gap:12px;align-items:center">
           <canvas id="pie-mat-ent" width="180" height="180" style="flex-shrink:0"></canvas>
           <div style="flex:1">
-            ${clientes.map(([cli,v],i)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            ${clientesEnt.map(([cli,v],i)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
               <div style="width:9px;height:9px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
               <div style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cli}</div>
-              <div style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--accent)">${v.entregado.toLocaleString('es-ES',{maximumFractionDigits:1})}</div>
-              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:28px;text-align:right">${totalPedido?Math.round(v.entregado/totalPedido*100):0}%</div>
+              <div style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--accent)">${v.toLocaleString('es-ES',{maximumFractionDigits:1})}</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:28px;text-align:right">${totalEntPeriodo?Math.round(v/totalEntPeriodo*100):0}%</div>
             </div>`).join('')}
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            ${totalPendiente>0?`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
               <div style="width:9px;height:9px;border-radius:50%;background:#d4cfc8;flex-shrink:0"></div>
-              <div style="flex:1;font-size:11px;color:var(--text3)">Pendiente</div>
+              <div style="flex:1;font-size:11px;color:var(--text3)">Pendiente activos</div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--text3)">${totalPendiente.toLocaleString('es-ES',{maximumFractionDigits:1})}</div>
-              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:28px;text-align:right">${totalPedido?Math.round(totalPendiente/totalPedido*100):0}%</div>
-            </div>
+            </div>`:''}
           </div>
-        </div>
+        </div>`:`<div class="empty-state" style="padding:1rem">Sin entregas en este período</div>`}
       </div>
       <div class="card" style="padding:16px">
-        <div class="sec-label" style="margin-bottom:12px">Pendiente por cliente</div>
+        <div class="sec-label" style="margin-bottom:4px">Pendiente por cliente</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Pedidos activos pendientes de entregar</div>
         ${datosPend.length?`<div style="display:flex;gap:12px;align-items:center">
           <canvas id="pie-mat-pend" width="180" height="180" style="flex-shrink:0"></canvas>
           <div style="flex:1">
-            ${clientes.filter(([,v])=>v.pedido-v.entregado>0).map(([cli,v],i)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            ${clientesPend.map(([cli,v],i)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
               <div style="width:9px;height:9px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></div>
               <div style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cli}</div>
-              <div style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--warn)">${(v.pedido-v.entregado).toLocaleString('es-ES',{maximumFractionDigits:1})}</div>
-              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:28px;text-align:right">${totalPendiente?Math.round((v.pedido-v.entregado)/totalPendiente*100):0}%</div>
+              <div style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--warn)">${v.toLocaleString('es-ES',{maximumFractionDigits:1})}</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:28px;text-align:right">${totalPendiente?Math.round(v/totalPendiente*100):0}%</div>
             </div>`).join('')}
           </div>
-        </div>`:`<div class="empty-state" style="padding:1rem">✅ Todo entregado</div>`}
+        </div>`:`<div class="empty-state" style="padding:1rem">✅ Sin pendientes activos</div>`}
       </div>
     </div>`;
 
-  // Dibujar tartas INMEDIATAMENTE después de insertar el HTML
-  requestAnimationFrame(()=>{
-    requestAnimationFrame(()=>{
-      if(datosEnt.length) drawPieChart('pie-mat-ent',datosEnt,totalPedido);
-      if(datosPend.length) drawPieChart('pie-mat-pend',datosPend,totalPendiente);
-    });
-  });
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(datosEnt.length) drawPieChart('pie-mat-ent',datosEnt,totalEntPeriodo+totalPendiente);
+    if(datosPend.length) drawPieChart('pie-mat-pend',datosPend,totalPendiente);
+  }));
 }
 
 // ── VISTA CLIENTE: barras apiladas ──
