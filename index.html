@@ -338,7 +338,7 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg)
 </div>
 <footer class="footer">COMREC Comercial de Reciclajes · Sincronizado con Google Sheets</footer>
 <script>
-const API = 'https://script.google.com/macros/s/AKfycbychsuYkkQbAEVteX5QKxCZY28vdRXbHigluvp5c97N1RNe_Cg_fWDTKWX1iqyRAze5Vw/exec';
+const API = 'https://script.google.com/macros/s/AKfycbywIrFk21NHYv6yzbu-Vm4OnV5ypSt7aQ9_1uvrUnB2-_DCBs9CP-LImDh8C4CcCpyqJA/exec';
 const COLORS = ['#2a5c45','#e07b39','#3b82f6','#a855f7','#ec4899','#14b8a6','#f59e0b','#ef4444','#6366f1','#84cc16'];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const TOLERANCIA_PCT = 0.10; // +-10% de la cantidad pedida para completar pedido
@@ -648,8 +648,8 @@ function procesarExcel(input) {
           for (let j = 0; j < rows[i].length; j++) {
             if (String(rows[i][j] || '').toUpperCase().includes('TOTAL')) {
               const val = rows[i][weightCol];
-              if (val !== null && !isNaN(parseFloat(val))) {
-                totalWeight = parseFloat(parseFloat(val).toFixed(2));
+              if (val !== null && !isNaN(parseFloat(String(val).replace(',','.')))) {
+                totalWeight = parseFloat(parseFloat(String(val).replace(',','.')).toFixed(2));
               }
               break;
             }
