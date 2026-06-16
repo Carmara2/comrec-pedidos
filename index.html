@@ -874,6 +874,10 @@ async function registrarEntrega(rowIndex,num,cliente,material,pend){
   const obs=document.getElementById('obs-'+rowIndex).value.trim();
   const msgOk=document.getElementById('msg-e-ok'),msgErr=document.getElementById('msg-e-err');
   if(!fecha||!cantidad){showMsg(msgErr,'Indica fecha y cantidad.');return;}
+
+  const pedido=pedidos.find(p=>p.rowIndex===rowIndex);
+  if(!pedido){showMsg(msgErr,'No se encontró el pedido.');return;}
+
   if(cantidad>pend+pedido.cantPedida*TOLERANCIA_PCT){showMsg(msgErr,`La cantidad supera el máximo permitido (${(pend+pedido.cantPedida*TOLERANCIA_PCT).toFixed(1)} Tn).`);return;}
 
   const MESES_N=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -883,7 +887,6 @@ async function registrarEntrega(rowIndex,num,cliente,material,pend){
 
   showLoading(true);
   try {
-    const pedido=pedidos.find(p=>p.rowIndex===rowIndex);
     const nuevaEntregada=pedido.cantEntregada+cantidad;
     await apiCall({action:'appendRow',sheet:'Entregas',row:JSON.stringify([fecha,num,mesReal,anyoReal,cliente,material,cantidad,obs])});
     await apiCall({action:'updateCell',sheet:'Pedidos',row:rowIndex,col:7,value:nuevaEntregada});
