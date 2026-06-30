@@ -293,6 +293,13 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg)
             <div id="tabla-precios-medios"></div>
           </div>
         </div>
+        <div id="resumen-material-pendiente" style="margin-bottom:20px">
+          <div class="card" style="padding:20px">
+            <div class="sec-label" style="margin-bottom:4px">Total pendiente por material (Tn)</div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Pedidos activos · no afectado por el filtro de período</div>
+            <div style="position:relative;height:320px"><canvas id="bar-materiales-pendiente"></canvas></div>
+          </div>
+        </div>
       </div>
 
       <!-- VISTA CLIENTE -->
@@ -1206,19 +1213,46 @@ function renderResumenMaterial(periodo){
       </tr>`;
     }).join('')}</tbody></table>` : '<div style="color:var(--text3);font-size:12px">Sin datos</div>';
 
-  if(!mats.length) return;
+  // Gráfico barras entregado
+  if(mats.length){
+    drawBarChartSimple('bar-materiales', mats.map(([mat,v])=>({label:mat,valor:v.total})));
+  } else {
+    setTimeout(()=>{
+      const canvas=document.getElementById('bar-materiales');
+      if(canvas){ const ctx=canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); }
+    },50);
+  }
 
-  // Gráfico barras
+  // ── Gráfico barras: TOTAL PENDIENTE POR MATERIAL (pedidos activos, sin filtro de período) ──
+  const porMatPend={};
+  pedidos.filter(p=>p.activo).forEach(p=>{
+    const pend=Math.max(0,p.cantPedida-p.cantEntregada);
+    if(pend<=0) return;
+    porMatPend[p.material]=(porMatPend[p.material]||0)+pend;
+  });
+  const matsPend=Object.entries(porMatPend).sort((a,b)=>b[1]-a[1]);
+  if(matsPend.length){
+    drawBarChartSimple('bar-materiales-pendiente', matsPend.map(([mat,v])=>({label:mat,valor:v})));
+  } else {
+    setTimeout(()=>{
+      const canvas=document.getElementById('bar-materiales-pendiente');
+      if(canvas){ const ctx=canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); }
+    },50);
+  }
+}
+
+// ── DIBUJAR BARRAS SIMPLES (reutilizable: entregado / pendiente por material) ──
+function drawBarChartSimple(canvasId, items){
   setTimeout(()=>{
-    const canvas=document.getElementById('bar-materiales'); if(!canvas) return;
+    const canvas=document.getElementById(canvasId); if(!canvas) return;
     const ctx=canvas.getContext('2d');
     const W=canvas.parentElement.offsetWidth-2, H=300;
     canvas.width=W; canvas.height=H;
     const padL=50,padR=10,padT=20,padB=85,cW=W-padL-padR,cH=H-padT-padB;
-    const vals=mats.map(([,v])=>v.total);
-    const maxVal=Math.max(...vals)*1.12||1;
-    const barW=Math.max(20,Math.min(48,(cW/mats.length)*0.6));
-    const gap=cW/mats.length;
+    const vals=items.map(d=>d.valor);
+    const maxVal=Math.max(...vals,0)*1.12||1;
+    const barW=Math.max(20,Math.min(48,(cW/Math.max(items.length,1))*0.6));
+    const gap=cW/Math.max(items.length,1);
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--surface')||'#fff';
     ctx.fillRect(0,0,W,H);
@@ -1229,17 +1263,17 @@ function renderResumenMaterial(periodo){
       ctx.fillStyle='#9e9b94';ctx.font='10px sans-serif';ctx.textAlign='right';
       ctx.fillText(Math.round((i/4)*maxVal).toLocaleString('es-ES'),padL-3,y+4);
     }
-    mats.forEach(([mat,v],i)=>{
+    items.forEach((d,i)=>{
       const x=padL+i*gap+gap/2-barW/2;
-      const bH=(v.total/maxVal)*cH;
+      const bH=(d.valor/maxVal)*cH;
       const y=padT+cH-bH;
       ctx.fillStyle=COLORS[i%COLORS.length];
       ctx.fillRect(x,y,barW,bH);
       ctx.fillStyle='#1a1916';ctx.font='bold 10px sans-serif';ctx.textAlign='center';
-      ctx.fillText(v.total.toLocaleString('es-ES',{maximumFractionDigits:1}),x+barW/2,y-4);
+      ctx.fillText(d.valor.toLocaleString('es-ES',{maximumFractionDigits:1}),x+barW/2,y-4);
       ctx.save();ctx.translate(x+barW/2,padT+cH+8);ctx.rotate(-Math.PI/4);
       ctx.textAlign='right';ctx.fillStyle='#6b6860';ctx.font='10px sans-serif';
-      ctx.fillText(mat.length>20?mat.slice(0,18)+'…':mat,0,0);ctx.restore();
+      ctx.fillText(d.label.length>20?d.label.slice(0,18)+'…':d.label,0,0);ctx.restore();
     });
   },50);
 }
