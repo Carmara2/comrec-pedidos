@@ -563,13 +563,28 @@ async function guardarPedido(){
   showLoading(false);
 }
 
+// ── ESTADO ORDENACIÓN PEDIDOS ──
+let pedidosSort = { col: null, dir: 1 };
+
+function setPedidosSort(col) {
+  if (pedidosSort.col === col) { pedidosSort.dir *= -1; }
+  else { pedidosSort.col = col; pedidosSort.dir = 1; }
+  renderPedidos();
+}
+
 // ── RENDER PEDIDOS ACTIVOS ──
 function renderPedidos(){
-  const activos=pedidos.filter(p=>p.activo);
+  let activos=pedidos.filter(p=>p.activo);
   const wrap=document.getElementById('tabla-pedidos');
   if(!activos.length){wrap.innerHTML='<div class="empty-state"><span class="empty-state-icon">📭</span>No hay pedidos activos</div>';return;}
+  if(pedidosSort.col){
+    activos=[...activos].sort((a,b)=>String(a[pedidosSort.col]).localeCompare(String(b[pedidosSort.col]),'es')*pedidosSort.dir);
+  }
+  const si=(col)=>pedidosSort.col!==col?'<span style="opacity:.3;margin-left:3px">⇅</span>':pedidosSort.dir===1?'<span style="margin-left:3px">↑</span>':'<span style="margin-left:3px">↓</span>';
   wrap.innerHTML=`<table><thead><tr>
-    <th>Activo</th><th>Nº Pedido</th><th>F. Creación</th><th>Cliente</th><th>Material</th>
+    <th>Activo</th><th>Nº Pedido</th><th>F. Creación</th>
+    <th onclick="setPedidosSort('cliente')" style="cursor:pointer;user-select:none">Cliente${si('cliente')}</th>
+    <th onclick="setPedidosSort('material')" style="cursor:pointer;user-select:none">Material${si('material')}</th>
     <th style="text-align:right">Precio</th><th style="text-align:right">Pedido (Tn)</th>
     <th style="text-align:right">Entregado (Tn)</th><th style="text-align:right">Pendiente (Tn)</th>
     <th>Progreso</th><th></th>
@@ -593,7 +608,6 @@ function renderPedidos(){
   }).join('')}
   </tbody></table>`;
 }
-
 // ── TOGGLE ACTIVO ──
 async function toggleActivo(rowIndex,checked){
   if(checked) return; // reactivar no permitido desde aquí
