@@ -108,6 +108,7 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--bg)
   <div class="header-sep"></div>
   <span id="header-status" class="header-status status-loading">⟳ Cargando...</span>
   <button id="btn-reconectar" onclick="cargarDatos()" style="display:none;margin-left:8px;font-size:11px;padding:3px 10px;border-radius:999px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-family:var(--mono)">&#8635; Reintentar</button>
+  <button id="btn-refresh" onclick="cargarDatos(true)" title="Forzar recarga desde Google Sheets (ignora caché)" style="margin-left:8px;font-size:11px;padding:3px 10px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-family:var(--mono)">&#8635; Actualizar</button>
   <div class="header-date" id="header-date" style="margin-left:12px"></div>
 </header>
 <div class="layout">
@@ -425,13 +426,14 @@ async function apiCall(params, { retries=3, timeoutMs=45000 }={}) {
 }
 
 // ── CARGAR DATOS ──
-async function cargarDatos() {
-  setStatus('loading','⟳ Cargando...'); showLoading(true);
+async function cargarDatos(forceRefresh=false) {
+  setStatus('loading', forceRefresh ? '⟳ Actualizando...' : '⟳ Cargando...'); showLoading(true);
+  const extra = forceRefresh ? {noCache:'1'} : {};
   try {
     // Leer hojas secuencialmente: Apps Script rechaza peticiones concurrentes del mismo usuario
-    const rListas   = await apiCall({action:'read',sheet:'Listas'});
-    const rPedidos  = await apiCall({action:'read',sheet:'Pedidos'});
-    const rEntregas = await apiCall({action:'read',sheet:'Entregas'});
+    const rListas   = await apiCall({action:'read',sheet:'Listas',...extra});
+    const rPedidos  = await apiCall({action:'read',sheet:'Pedidos',...extra});
+    const rEntregas = await apiCall({action:'read',sheet:'Entregas',...extra});
 
     // Listas: col A=Clientes, col B=Materiales, una entrada por fila, texto puro
     const lRows=rListas.data.slice(1);
@@ -467,7 +469,8 @@ async function cargarDatos() {
     })).filter(e=>e.num!=='');
 
     document.getElementById('hbadge').textContent=entregas.length;
-    setStatus('ok','✓ Conectado');
+    const src = (rPedidos.fromCache || rEntregas.fromCache) ? '✓ Caché' : '✓ Conectado';
+    setStatus('ok', src);
 
     // Auto-detectar pedidos que están completados pero siguen activos
     const pedidosADesactivar = pedidos.filter(p =>
